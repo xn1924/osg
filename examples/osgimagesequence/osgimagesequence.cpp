@@ -204,6 +204,17 @@ public:
     virtual void getUsage(osg::ApplicationUsage& usage) const;
 
     typedef std::vector< osg::observer_ptr<osg::ImageStream> > ImageStreamList;
+    
+    struct ImageStreamPlaybackSpeedData {
+        double fps;
+        unsigned char* lastData;
+        double timeStamp;
+        
+        ImageStreamPlaybackSpeedData() : fps(0), lastData(NULL), timeStamp(0) {}
+        
+    };
+    
+    typedef std::vector< ImageStreamPlaybackSpeedData > ImageStreamPlayBackSpeedList;
 
 protected:
 
@@ -259,6 +270,7 @@ protected:
         
         ImageStreamList& _imageStreamList;
         
+        
     protected:
     
         FindImageStreamsVisitor& operator = (const FindImageStreamsVisitor&) { return *this; }
@@ -268,6 +280,7 @@ protected:
     bool            _playToggle;
     bool            _trackMouse;
     ImageStreamList _imageStreamList;
+    ImageStreamPlayBackSpeedList _imageStreamPlayBackSpeedList;
     
 };
 
@@ -281,6 +294,7 @@ void MovieEventHandler::set(osg::Node* node)
         FindImageStreamsVisitor fisv(_imageStreamList);
         node->accept(fisv);
     }
+    _imageStreamPlayBackSpeedList.resize(_imageStreamList.size());
 }
 
 
@@ -288,6 +302,32 @@ bool MovieEventHandler::handle(const osgGA::GUIEventAdapter& ea,osgGA::GUIAction
 {
     switch(ea.getEventType())
     {
+        case(osgGA::GUIEventAdapter::FRAME):
+            {
+                double t = ea.getTime();
+                bool printed(false);
+                
+                ImageStreamPlayBackSpeedList::iterator fps_itr = _imageStreamPlayBackSpeedList.begin();
+                for(ImageStreamList::iterator itr=_imageStreamList.begin();
+                    itr!=_imageStreamList.end();
+                    ++itr, ++fps_itr)
+                {
+                    if ((*itr)->data() != (*fps_itr).lastData) 
+                    {
+                        ImageStreamPlaybackSpeedData& data(*fps_itr);
+                        double dt = (data.timeStamp > 0) ? t - data.timeStamp : 1/60.0;
+                        data.lastData = (*itr)->data();
+                        data.fps = (*fps_itr).fps * 0.5 + 0.5 * (1/dt);
+                        data.timeStamp = t;
+                        std::cout << data.fps << " ";
+                        printed = true;
+                    }
+                }
+                if (printed) 
+                    std::cout << std::endl;
+            }
+            break;
+            
         case(osgGA::GUIEventAdapter::KEYDOWN):
         {
             if (ea.getKey()=='p')
@@ -361,6 +401,9 @@ void MovieEventHandler::getUsage(osg::ApplicationUsage& usage) const
 
 int main(int argc, char **argv)
 {
+    // clear all ext-alias-mappings
+    osgDB::Registry::instance()->getFileExtensionAliasMap().clear();
+    
     osg::ArgumentParser arguments(&argc,argv);
 
     // construct the viewer.
