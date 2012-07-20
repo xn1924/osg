@@ -578,18 +578,11 @@ ENDIF(BUILD_OSG_EXAMPLES AND NOT ANDROID)
 # Image readers/writers depend on 3rd party libraries except for OS X which
 # can use Quicktime.
 IF(NOT ANDROID)
-    IF(NOT APPLE)
-        FIND_PACKAGE(GIFLIB)
-        FIND_PACKAGE(JPEG)
-        FIND_PACKAGE(PNG)
-        FIND_PACKAGE(TIFF)
-
-        # QuickTime is required for OS X, but optional for Windows.
-        IF(WIN32)
-            FIND_PACKAGE(QuickTime)
-        ENDIF()
-
-    ELSE()
+    FIND_PACKAGE(GIFLIB)
+    FIND_PACKAGE(JPEG)
+    FIND_PACKAGE(PNG)
+    FIND_PACKAGE(TIFF)
+    IF(APPLE)
         FIND_PACKAGE(QuickTime)
         FIND_PACKAGE(QTKit)
         FIND_PACKAGE(CoreVideo)
@@ -859,17 +852,17 @@ IF(APPLE)
                 SET(OSG_DEFAULT_IMAGE_PLUGIN_FOR_OSX "imageio" CACHE STRING "Forced imageio default image plugin for OSX" FORCE)
                 # 64 Bit Works, PPC is not supported any more
                 SET(CMAKE_OSX_ARCHITECTURES "i386;x86_64" CACHE STRING "Build architectures for OSX" FORCE)
-                SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=10.7 -fvisibility-inlines-hidden" CACHE STRING "Flags used by the compiler during all build types." FORCE)
+                SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=10.7 -fvisibility-inlines-hidden -Wno-overloaded-virtual" CACHE STRING "Flags used by the compiler during all build types." FORCE)
             ELSEIF(${OSG_OSX_SDK_NAME} STREQUAL "macosx10.6" /
                    ${OSG_OSX_SDK_NAME} STREQUAL "macosx10.5")
                 SET(OSG_DEFAULT_IMAGE_PLUGIN_FOR_OSX "imageio" CACHE STRING "Forced imageio default image plugin for OSX" FORCE)
                 # 64-bit compiles are not supported with Carbon. 
                 SET(CMAKE_OSX_ARCHITECTURES "ppc;i386" CACHE STRING "Build architectures for OSX" FORCE)
-                SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=10.5 -ftree-vectorize -fvisibility-inlines-hidden" CACHE STRING "Flags used by the compiler during all build types." FORCE)
+                SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=10.5 -ftree-vectorize -fvisibility-inlines-hidden -Wno-overloaded-virtual" CACHE STRING "Flags used by the compiler during all build types." FORCE)
             ELSEIF(${OSG_OSX_SDK_NAME} STREQUAL "macosx10.4")
                 SET(OSG_DEFAULT_IMAGE_PLUGIN_FOR_OSX "quicktime" CACHE STRING "Forced imageio default image plugin for OSX" FORCE)
                 SET(CMAKE_OSX_ARCHITECTURES "ppc;i386" CACHE STRING "Build architectures for OSX" FORCE)
-                SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=10.4 -ftree-vectorize -fvisibility-inlines-hidden" CACHE STRING "Flags used by the compiler during all build types." FORCE)
+                SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mmacosx-version-min=10.4 -ftree-vectorize -fvisibility-inlines-hidden -Wno-overloaded-virtual" CACHE STRING "Flags used by the compiler during all build types." FORCE)
             ELSE()
                 # No Universal Binary support
                 # Should break down further to set the -mmacosx-version-min,
@@ -878,7 +871,7 @@ IF(APPLE)
         ENDIF()
 
         OPTION(OSG_BUILD_APPLICATION_BUNDLES "Enable the building of applications and examples as OSX Bundles" OFF)
-
+        
     ENDIF()
 
 ENDIF(APPLE)
