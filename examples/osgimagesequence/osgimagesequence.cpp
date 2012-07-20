@@ -29,12 +29,31 @@
 #include <osgDB/Registry>
 #include <osgDB/ReadFile>
 #include <osgDB/WriteFile>
+#include <osgDB/FileNameUtils>
+#include <osgDB/FileUtils>
+
 
 #include <osgViewer/Viewer>
 #include <osgViewer/ViewerEventHandlers>
 
 #include <iostream>
 
+
+void addImageFilesFromDirectory(osg::ImageSequence* imagesequence, const std::string& directory)
+{
+    osgDB::DirectoryContents dc = osgDB::getDirectoryContents(directory);
+    std::sort(dc.begin(), dc.end());
+    
+    for(osgDB::DirectoryContents::iterator i = dc.begin(); i != dc.end(); ++i) 
+    {
+        std::string full_file_name = directory + "/" + (*i);
+        std::string ext = osgDB::getFileExtension(full_file_name);
+        if ((ext == "jpg") || (ext == "png") || (ext == "gif"))
+        {
+            imagesequence->addImageFile(full_file_name);
+        }
+    }
+}
 
 
 
@@ -86,7 +105,12 @@ osg::StateSet* createState(osg::ArgumentParser& arguments)
             }
             else
             {
-                imageSequence->addImageFile(arguments[i]);
+                if (osgDB::fileType(arguments[i]) == osgDB::DIRECTORY) {
+                    addImageFilesFromDirectory(imageSequence, arguments[i]);
+                } 
+                else {
+                    imageSequence->addImageFile(arguments[i]);
+                }
             }
         }
 
