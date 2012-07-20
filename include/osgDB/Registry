@@ -79,6 +79,9 @@ class OSGDB_EXPORT Registry : public osg::Referenced
 
         /** read the command line arguments.*/
         void readCommandLine(osg::ArgumentParser& commandLine);
+        
+        
+        typedef std::map< std::string, std::string> ExtensionAliasMap;
 
         /** register an .fileextension alias to mapExt toExt, the later
           * should the the extension name of the readerwriter plugin library.
@@ -86,6 +89,9 @@ class OSGDB_EXPORT Registry : public osg::Referenced
           * addExtAlias("tif","tiff") which will enable .tif to be read
           * by the libdb_tiff readerwriter plugin.*/
         void addFileExtensionAlias(const std::string mapExt, const std::string toExt);
+        ExtensionAliasMap& getFileExtensionAliasMap() { return _extAliasMap; }
+        const ExtensionAliasMap& getFileExtensionAliasMap() const { return _extAliasMap; }
+        
 
         /** Reads a file that configures extension mappings. File is ASCII text
           * and each line contains the parameters to the addFileExtensionAlias
@@ -508,7 +514,6 @@ class OSGDB_EXPORT Registry : public osg::Referenced
         virtual ~Registry();
 
         typedef std::vector< osg::ref_ptr<DynamicLibrary> >             DynamicLibraryList;
-        typedef std::map< std::string, std::string>                     ExtensionAliasMap;
 
         typedef std::pair<osg::ref_ptr<osg::Object>, double >           ObjectTimeStampPair;
         typedef std::map<std::string, ObjectTimeStampPair >             ObjectCache;
