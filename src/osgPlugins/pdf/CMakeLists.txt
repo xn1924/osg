@@ -1,5 +1,5 @@
 IF(APPLE)
-  SET(TARGET_SRC ReaderWriterPDF_OSX.cpp )
+  SET(TARGET_SRC ReaderWriterPDF_OSX.cpp ) 
 ELSE()
   SET(TARGET_SRC ReaderWriterPDF.cpp )
 
