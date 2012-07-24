@@ -24,7 +24,7 @@ int main(int argc,char** argv)
             if (pdfReader->open(arguments[i], hints))
             {            
                 group->addChild(pdfReader.get());
-                
+                group->getOrCreateStateSet()->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
                 hints.position.x() += 1.1f;
             }
         }
