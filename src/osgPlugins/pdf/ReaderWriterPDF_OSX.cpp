@@ -19,7 +19,6 @@
 #include <osg/ImageUtils>
 
 #include <ApplicationServices/ApplicationServices.h>
-#include <Accelerate/Accelerate.h>
 
 
 
