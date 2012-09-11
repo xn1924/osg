@@ -208,9 +208,9 @@ public:
     struct ImageStreamPlaybackSpeedData {
         double fps;
         unsigned char* lastData;
-        double timeStamp;
+        double timeStamp, lastOutput;
         
-        ImageStreamPlaybackSpeedData() : fps(0), lastData(NULL), timeStamp(0) {}
+        ImageStreamPlaybackSpeedData() : fps(0), lastData(NULL), timeStamp(0), lastOutput(0) {}
         
     };
     
@@ -319,8 +319,14 @@ bool MovieEventHandler::handle(const osgGA::GUIEventAdapter& ea,osgGA::GUIAction
                         data.lastData = (*itr)->data();
                         data.fps = (*fps_itr).fps * 0.8 + 0.2 * (1/dt);
                         data.timeStamp = t;
-                        std::cout << data.fps << " ";
-                        printed = true;
+                        
+                        if (t-data.lastOutput > 1)
+                        {
+                            std::cout << data.fps << " ";
+                            data.lastOutput = t;
+                            printed = true;
+                        }
+                        
                     }
                 }
                 if (printed) 
