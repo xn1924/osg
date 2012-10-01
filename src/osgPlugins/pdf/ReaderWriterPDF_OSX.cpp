@@ -44,7 +44,7 @@ class CGPDFDocumentImage : public osgWidget::PdfImage
 
         bool open(const std::string& filename)
         {
-            OSG_NOTICE<<"open("<<filename<<")"<<std::endl;
+            OSG_INFO<<"open("<<filename<<")"<<std::endl;
 
             std::string foundFile = osgDB::findDataFile(filename);
             if (foundFile.empty())
@@ -78,7 +78,7 @@ class CGPDFDocumentImage : public osgWidget::PdfImage
             _doc = CGPDFDocumentCreateWithURL(the_url);
             CFRelease(the_url);
 
-            OSG_NOTICE<<"getNumOfPages()=="<<getNumOfPages()<<std::endl;
+            OSG_INFO<<"getNumOfPages()=="<<getNumOfPages()<<std::endl;
 
             if (getNumOfPages()==0)
             {
@@ -111,8 +111,10 @@ class CGPDFDocumentImage : public osgWidget::PdfImage
 
         virtual bool page(int pageNum)
         {
+            _pageNum = osg::clampTo(pageNum, 0, getNumOfPages()-1);
+            OSG_INFO << "rendering page: " << _pageNum << " num pages: " << getNumOfPages() << std::endl;
             static const float scale = 2.0;
-            CGPDFPageRef page = CGPDFDocumentGetPage(_doc, pageNum + 1);
+            CGPDFPageRef page = CGPDFDocumentGetPage(_doc, _pageNum+1);
             CGRect mediaRect = CGPDFPageGetBoxRect(page, kCGPDFCropBox);
             
             allocateImage(mediaRect.size.width * scale, mediaRect.size.height * scale, 1, GL_RGBA, GL_UNSIGNED_BYTE);
