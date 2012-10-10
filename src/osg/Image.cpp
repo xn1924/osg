@@ -27,6 +27,7 @@
 #include <osg/TextureCubeMap>
 #include <osg/Light>
 
+#include <algorithm>
 #include <string.h>
 #include <stdlib.h>
 
@@ -213,7 +214,8 @@ Image::Image()
     _packing(4),
     _pixelAspectRatio(1.0),
     _allocationMode(USE_NEW_DELETE),
-    _data(0L)
+    _data(0L),
+    _dimensionsChangedCallbacks()
 {
     setDataVariance(STATIC);
 }
@@ -232,7 +234,8 @@ Image::Image(const Image& image,const CopyOp& copyop):
     _pixelAspectRatio(image._pixelAspectRatio),
     _allocationMode(USE_NEW_DELETE),
     _data(0L),
-    _mipmapData(image._mipmapData)
+    _mipmapData(image._mipmapData),
+    _dimensionsChangedCallbacks(image._dimensionsChangedCallbacks)
 {
     if (image._data)
     {
@@ -333,18 +336,25 @@ GLenum Image::computePixelFormat(GLenum format)
         case(GL_ALPHA16F_ARB):
         case(GL_ALPHA32F_ARB):
             return GL_ALPHA;
+
         case(GL_LUMINANCE16F_ARB):
         case(GL_LUMINANCE32F_ARB):
             return GL_LUMINANCE;
+
         case(GL_INTENSITY16F_ARB):
         case(GL_INTENSITY32F_ARB):
             return GL_INTENSITY;
+
         case(GL_LUMINANCE_ALPHA16F_ARB):
         case(GL_LUMINANCE_ALPHA32F_ARB):
             return GL_LUMINANCE_ALPHA;
+
         case(GL_RGB32F_ARB):
         case(GL_RGB16F_ARB):
             return GL_RGB;
+
+        case(GL_RGBA8):
+        case(GL_RGBA16):
         case(GL_RGBA32F_ARB):
         case(GL_RGBA16F_ARB):
             return GL_RGBA;
@@ -356,6 +366,7 @@ GLenum Image::computePixelFormat(GLenum format)
         case(GL_ALPHA16UI_EXT):
         case(GL_ALPHA32UI_EXT):
             return GL_ALPHA_INTEGER_EXT;
+
         case(GL_LUMINANCE8I_EXT):
         case(GL_LUMINANCE16I_EXT):
         case(GL_LUMINANCE32I_EXT):
@@ -363,6 +374,7 @@ GLenum Image::computePixelFormat(GLenum format)
         case(GL_LUMINANCE16UI_EXT):
         case(GL_LUMINANCE32UI_EXT):
             return GL_LUMINANCE_INTEGER_EXT;
+
         case(GL_INTENSITY8I_EXT):
         case(GL_INTENSITY16I_EXT):
         case(GL_INTENSITY32I_EXT):
@@ -371,6 +383,7 @@ GLenum Image::computePixelFormat(GLenum format)
         case(GL_INTENSITY32UI_EXT):
             OSG_WARN<<"Image::computePixelFormat("<<std::hex<<format<<std::dec<<") intensity pixel format is not correctly specified, so assume GL_LUMINANCE_INTEGER."<<std::endl;
             return GL_LUMINANCE_INTEGER_EXT;
+
         case(GL_LUMINANCE_ALPHA8I_EXT):
         case(GL_LUMINANCE_ALPHA16I_EXT):
         case(GL_LUMINANCE_ALPHA32I_EXT):
@@ -378,6 +391,7 @@ GLenum Image::computePixelFormat(GLenum format)
         case(GL_LUMINANCE_ALPHA16UI_EXT):
         case(GL_LUMINANCE_ALPHA32UI_EXT):
             return GL_LUMINANCE_ALPHA_INTEGER_EXT;
+
         case(GL_RGB32I_EXT):
         case(GL_RGB16I_EXT):
         case(GL_RGB8I_EXT):
@@ -385,13 +399,14 @@ GLenum Image::computePixelFormat(GLenum format)
         case(GL_RGB16UI_EXT):
         case(GL_RGB8UI_EXT):
             return GL_RGB_INTEGER_EXT;
+
         case(GL_RGBA32I_EXT):
         case(GL_RGBA16I_EXT):
         case(GL_RGBA8I_EXT):
         case(GL_RGBA32UI_EXT):
         case(GL_RGBA16UI_EXT):
         case(GL_RGBA8UI_EXT):
-            return GL_RGBA_INTEGER_EXT;;
+            return GL_RGBA_INTEGER_EXT;
 
         default:
             return format;
@@ -841,6 +856,8 @@ void Image::allocateImage(int s,int t,int r,
                         int packing)
 {
     _mipmapData.clear();
+    
+    bool callback_needed(false);
 
     unsigned int previousTotalSize = 0;
 
@@ -858,6 +875,7 @@ void Image::allocateImage(int s,int t,int r,
 
     if (_data)
     {
+        callback_needed = (_s != s) || (_t != t) || (_r != r);
         _s = s;
         _t = t;
         _r = r;
@@ -872,7 +890,8 @@ void Image::allocateImage(int s,int t,int r,
     }
     else
     {
-
+        callback_needed = (_s != 0) || (_t != 0) || (_r != 0);
+        
         // failed to allocate memory, for now, will simply set values to 0.
         _s = 0;
         _t = 0;
@@ -886,7 +905,10 @@ void Image::allocateImage(int s,int t,int r,
         // policy so that allocateImage honours previous settings of _internalTextureFormat.
         //_internalTextureFormat = 0;
     }
-
+    
+    if (callback_needed)
+        handleDimensionsChangedCallbacks();
+    
     dirty();
 }
 
@@ -899,7 +921,9 @@ void Image::setImage(int s,int t,int r,
                      int rowLength)
 {
     _mipmapData.clear();
-
+    
+    bool callback_needed = (_s != s) || (_t != t) || (_r != r);
+    
     _s = s;
     _t = t;
     _r = r;
@@ -914,6 +938,9 @@ void Image::setImage(int s,int t,int r,
     _rowLength = rowLength;
 
     dirty();
+    
+    if (callback_needed)
+        handleDimensionsChangedCallbacks();
 
 }
 
@@ -1745,4 +1772,15 @@ Vec4 Image::getColor(const Vec3& texcoord) const
     int r = int(texcoord.z()*float(_r-1)) % _r;
     //OSG_NOTICE<<"getColor("<<texcoord<<")="<<getColor(s,t,r)<<std::endl;
     return getColor(s,t,r);
+}
+
+void Image::addDimensionsChangedCallback(DimensionsChangedCallback* cb)
+{
+    _dimensionsChangedCallbacks.push_back(cb);
+}
+
+void Image::removeDimensionsChangedCallback(DimensionsChangedCallback* cb)
+{
+    DimensionsChangedCallbackVector::iterator itr = std::find(_dimensionsChangedCallbacks.begin(), _dimensionsChangedCallbacks.end(), cb);
+    if (itr!=_dimensionsChangedCallbacks.end()) _dimensionsChangedCallbacks.erase(itr);
 }

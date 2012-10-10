@@ -39,22 +39,32 @@
 #include <iostream>
 
 
-void addImageFilesFromDirectory(osg::ImageSequence* imagesequence, const std::string& directory)
+static osgDB::DirectoryContents getSuitableFiles(osg::ArgumentParser& arguments)
 {
-    osgDB::DirectoryContents dc = osgDB::getDirectoryContents(directory);
-    std::sort(dc.begin(), dc.end());
-    
-    for(osgDB::DirectoryContents::iterator i = dc.begin(); i != dc.end(); ++i) 
+    osgDB::DirectoryContents files;
+    for(int i=1; i<arguments.argc(); ++i)
     {
-        std::string full_file_name = directory + "/" + (*i);
-        std::string ext = osgDB::getFileExtension(full_file_name);
-        if ((ext == "jpg") || (ext == "png") || (ext == "gif"))
+        if (osgDB::fileType(arguments[i]) == osgDB::DIRECTORY)
         {
-            imagesequence->addImageFile(full_file_name);
+            const std::string& directory = arguments[i];
+            osgDB::DirectoryContents dc = osgDB::getSortedDirectoryContents(directory);
+            
+            for(osgDB::DirectoryContents::iterator itr = dc.begin(); itr != dc.end(); ++itr)
+            {
+                std::string full_file_name = directory + "/" + (*itr);
+                std::string ext = osgDB::getLowerCaseFileExtension(full_file_name);
+                if ((ext == "jpg") || (ext == "png") || (ext == "gif") ||  (ext == "rgb") || (ext == "dds") )
+                {
+                    files.push_back(full_file_name);
+                }
+            }
+        }
+        else {
+            files.push_back(arguments[i]);
         }
     }
+    return files;
 }
-
 
 
 //
@@ -90,14 +100,18 @@ osg::StateSet* createState(osg::ArgumentParser& arguments)
     
     double fps = 30.0;
     while (arguments.read("--fps",fps)) {}
-    
-    if (arguments.argc()>1)
+
+    osgDB::DirectoryContents files = getSuitableFiles(arguments);
+    if (!files.empty())
     {
-        for(int i=1; i<arguments.argc(); ++i)
+        for(osgDB::DirectoryContents::iterator itr = files.begin();
+            itr != files.end();
+            ++itr)
         {
+            const std::string& filename = *itr;
             if (preLoad)
             {
-                osg::ref_ptr<osg::Image> image = osgDB::readImageFile(arguments[i]);
+                osg::ref_ptr<osg::Image> image = osgDB::readImageFile(filename);
                 if (image.valid())
                 {
                     imageSequence->addImage(image.get());
@@ -105,15 +119,10 @@ osg::StateSet* createState(osg::ArgumentParser& arguments)
             }
             else
             {
-                if (osgDB::fileType(arguments[i]) == osgDB::DIRECTORY) {
-                    addImageFilesFromDirectory(imageSequence, arguments[i]);
-                } 
-                else {
-                    imageSequence->addImageFile(arguments[i]);
-                }
+                imageSequence->addImageFile(filename);
             }
-        }
 
+        }
         
         if (length>0.0)
         {
@@ -199,6 +208,32 @@ public:
     
     void set(osg::Node* node);
 
+    void setTrackMouse(bool tm)
+    {
+        if (tm==_trackMouse) return;
+
+        _trackMouse = tm;
+
+        std::cout << "tracking mouse: " << (_trackMouse ? "ON" : "OFF") << std::endl;
+
+        for(ImageStreamList::iterator itr=_imageStreamList.begin();
+            itr!=_imageStreamList.end();
+            ++itr)
+        {
+            if ((*itr)->getStatus()==osg::ImageStream::PLAYING)
+            {
+                (*itr)->pause();
+            }
+            else
+            {
+                (*itr)->play();
+            }
+        }
+
+    }
+
+    bool getTrackMouse() const { return _trackMouse; }
+
     virtual bool handle(const osgGA::GUIEventAdapter& ea,osgGA::GUIActionAdapter& aa, osg::Object*, osg::NodeVisitor* nv);
     
     virtual void getUsage(osg::ApplicationUsage& usage) const;
@@ -269,7 +304,6 @@ protected:
         }
         
         ImageStreamList& _imageStreamList;
-        
         
     protected:
     
@@ -404,22 +438,7 @@ bool MovieEventHandler::handle(const osgGA::GUIEventAdapter& ea,osgGA::GUIAction
             }
             else if (ea.getKey() == 'i') 
             {
-                _trackMouse = !_trackMouse;
-                std::cout << "tracking mouse: " << (_trackMouse ? "ON" : "OFF") << std::endl;
-                
-                for(ImageStreamList::iterator itr=_imageStreamList.begin();
-                    itr!=_imageStreamList.end();
-                    ++itr)
-                {
-                    if ((*itr)->getStatus()==osg::ImageStream::PLAYING)
-                    {
-                        (*itr)->pause();
-                    }
-                    else
-                    {
-                        (*itr)->play();
-                    }
-                }
+                setTrackMouse(!_trackMouse);
                 
                 
             }
@@ -429,6 +448,8 @@ bool MovieEventHandler::handle(const osgGA::GUIEventAdapter& ea,osgGA::GUIAction
         default:
             return false;
     }
+
+    return false;
 }
 
 void MovieEventHandler::getUsage(osg::ApplicationUsage& usage) const
@@ -444,10 +465,6 @@ void MovieEventHandler::getUsage(osg::ApplicationUsage& usage) const
 
 int main(int argc, char **argv)
 {
-    // clear all ext-alias-mappings
-    osgDB::Registry::instance()->getFileExtensionAliasMap().clear();
-    osgDB::Registry::instance()->addFileExtensionAlias("jpg", "imageio");
-    
     osg::ArgumentParser arguments(&argc,argv);
 
     // construct the viewer.
@@ -462,6 +479,9 @@ int main(int argc, char **argv)
     // pass the model to the MovieEventHandler so it can pick out ImageStream's to manipulate.
     MovieEventHandler* meh = new MovieEventHandler();
     meh->set( viewer.getSceneData() );
+
+    if (arguments.read("--track-mouse")) meh->setTrackMouse(true);
+    
     viewer.addEventHandler( meh );
 
     viewer.addEventHandler( new osgViewer::StatsHandler());

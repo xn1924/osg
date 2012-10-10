@@ -68,6 +68,7 @@ IF(DYNAMIC_OPENSCENEGRAPH)
     ADD_SUBDIRECTORY(osggraphicscost)
     ADD_SUBDIRECTORY(osgmanipulator)
     ADD_SUBDIRECTORY(osgmovie)
+    ADD_SUBDIRECTORY(osgmultiplemovies)
     ADD_SUBDIRECTORY(osgmultiplerendertargets)
     ADD_SUBDIRECTORY(osgmultitexture)
     ADD_SUBDIRECTORY(osgmultitexturecontrol)
@@ -216,7 +217,7 @@ IF(DYNAMIC_OPENSCENEGRAPH)
 
     ENDIF()
 
-    IF   (FLTK_FOUND AND FT_GL_LIBRARY)
+    IF   (FLTK_FOUND AND FLTK_GL_LIBRARY)
         ADD_SUBDIRECTORY(osgviewerFLTK)
     ENDIF()
 
