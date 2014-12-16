@@ -21,6 +21,12 @@
 //#define USE_DARWIN_COCOA_IMPLEMENTATION 1
 //#define USE_DARWIN_CARBON_IMPLEMENTATION 1
 
+#ifdef __OBJC__
+@class MenubarToggler;
+#else
+class MenubarToggler;
+#endif
+
 namespace osgDarwin {
 
 
@@ -43,12 +49,18 @@ class MenubarController : public osg::Referenced
         };
         
         MenubarController();        
+    
         static MenubarController* instance();
         
         void attachWindow(WindowAdapter* win);
         void update();
         void detachWindow(osgViewer::GraphicsWindow* win);
-        
+    
+        void setDisplaySettings(osg::DisplaySettings* display_settings);
+    
+    protected:
+        ~MenubarController();
+    
     private: 
         typedef std::list< osg::ref_ptr< WindowAdapter > > WindowList;
         WindowList          _list;
@@ -56,6 +68,7 @@ class MenubarController : public osg::Referenced
         CGRect              _availRect;
         CGRect              _mainScreenBounds;
         OpenThreads::Mutex  _mutex;
+        MenubarToggler*     _toggler;
         
 };
 
@@ -89,16 +102,13 @@ struct DarwinWindowingSystemInterface : public osg::GraphicsContext::WindowingSy
         /** returns screen-ndx containing rect x,y,w,h */
         unsigned int getScreenContaining(int x, int y, int w, int h);
     
+        virtual void setDisplaySettings(osg::DisplaySettings* display_settings) {
+            MenubarController::instance()->setDisplaySettings(display_settings);
+        }
+    
     protected:
 
         virtual void _init();
-
-        /** implementation of setScreenResolution */
-        bool setScreenResolutionImpl(const osg::GraphicsContext::ScreenIdentifier& screenIdentifier, unsigned int width, unsigned int height) ;
-
-        /** implementation of setScreenRefreshRate */
-        bool setScreenRefreshRateImpl(const osg::GraphicsContext::ScreenIdentifier& screenIdentifier, double refreshRate);
-
     
         template<class PixelBufferImplementation, class GraphicsWindowImplementation>
         osg::GraphicsContext* createGraphicsContextImplementation(osg::GraphicsContext::Traits* traits)

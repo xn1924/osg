@@ -32,20 +32,25 @@ Texture2DArray::Texture2DArray(const Texture2DArray& text,const CopyOp& copyop):
             Texture(text,copyop),
             _textureWidth(text._textureWidth),
             _textureHeight(text._textureHeight),
-            _textureDepth(text._textureDepth),
+            _textureDepth(0),
             _numMipmapLevels(text._numMipmapLevels),
             _subloadCallback(text._subloadCallback)
 {
+    setTextureDepth(text._textureDepth);
+
     // copy all images by iterating through all of them
     for (int i=0; i < text._textureDepth; i++)
     {
-        _images.push_back(copyop(text._images[i].get()));
-        _modifiedCount.push_back(ImageModifiedCount());
+        setImage(i, copyop(text._images[i].get()));
     }
 }
 
 Texture2DArray::~Texture2DArray()
 {
+    for (int i=0; i<_textureDepth; ++i)
+    {
+        setImage(i, NULL);
+    }
 }
 
 int Texture2DArray::compare(const StateAttribute& sa) const
@@ -118,9 +123,19 @@ void Texture2DArray::setImage(unsigned int layer, Image* image)
         if (_images[i].valid() && _images[i]->requiresUpdateCall()) ++numImageRequireUpdateBefore;
     }
 
+    if (_images[layer].valid())
+    {
+        _images[layer]->removeClient(this);
+    }
+
     // set image
     _images[layer] = image;
-   _modifiedCount[layer].setAllElementsTo(0);
+    _modifiedCount[layer].setAllElementsTo(0);
+
+    if (_images[layer].valid())
+    {
+        _images[layer]->addClient(this);
+    }
 
     // find out if we need to reset the update callback to handle the animation of image
     unsigned numImageRequireUpdateAfter = 0;
@@ -210,10 +225,10 @@ void Texture2DArray::apply(State& state) const
     ElapsedTime elapsedTime(&(tom->getApplyTime()));
     tom->getNumberApplied()++;
 
-    const Extensions* extensions = getExtensions(contextID,true);
+    const GLExtensions* extensions = state.get<GLExtensions>();
 
     // if not supported, then return
-    if (!extensions->isTexture2DArraySupported() || !extensions->isTexture3DSupported())
+    if (!extensions->isTexture2DArraySupported || !extensions->isTexture3DSupported)
     {
         OSG_WARN<<"Warning: Texture2DArray::apply(..) failed, 2D texture arrays are not support by OpenGL driver."<<std::endl;
         return;
@@ -235,7 +250,7 @@ void Texture2DArray::apply(State& state) const
             // compute the dimensions of the texture.
             computeRequiredTextureDimensions(state, *image, new_width, new_height, new_numMipmapLevels);
 
-            if (!textureObject->match(GL_TEXTURE_2D_ARRAY_EXT, new_numMipmapLevels, _internalFormat, new_width, new_height, 1, _borderWidth))
+            if (!textureObject->match(GL_TEXTURE_2D_ARRAY_EXT, new_numMipmapLevels, _internalFormat, new_width, new_height, _textureDepth, _borderWidth))
             {
                 Texture::releaseTextureObject(contextID, _textureObjectBuffer[contextID].get());
                 _textureObjectBuffer[contextID] = 0;
@@ -352,10 +367,10 @@ void Texture2DArray::apply(State& state) const
             }
         }
 
-        const Texture::Extensions* texExtensions = Texture::getExtensions(contextID,true);
+        const GLExtensions* extensions = state.get<GLExtensions>();
         // source images have no mipmamps but we could generate them...
         if( _min_filter != LINEAR && _min_filter != NEAREST && !_images[0]->isMipmap() &&
-            _useHardwareMipMapGeneration && texExtensions->isGenerateMipMapSupported() )
+            _useHardwareMipMapGeneration && extensions->isGenerateMipMapSupported )
             {
                 _numMipmapLevels = Image::computeNumberOfMipmapLevels( _textureWidth, _textureHeight );
                 generateMipmap( state );
@@ -419,9 +434,7 @@ void Texture2DArray::applyTexImage2DArray_subload(State& state, Image* image, GL
 
     // get the contextID (user defined ID of 0 upwards) for the
     // current OpenGL context.
-    const unsigned int contextID = state.getContextID();
-    const Extensions* extensions = getExtensions(contextID,true);
-    const Texture::Extensions* texExtensions = Texture::getExtensions(contextID,true);
+    const GLExtensions* extensions = state.get<GLExtensions>();
     GLenum target = GL_TEXTURE_2D_ARRAY_EXT;
 
     // compute the internal texture format, this set the _internalFormat to an appropriate value.
@@ -432,7 +445,7 @@ void Texture2DArray::applyTexImage2DArray_subload(State& state, Image* image, GL
     bool compressed_image = isCompressedInternalFormat((GLenum)image->getPixelFormat());
 
     // if the required layer is exceeds the maximum allowed layer sizes
-    if (indepth > extensions->maxLayerCount())
+    if (indepth > extensions->maxLayerCount)
     {
         // we give a warning and do nothing
         OSG_WARN<<"Warning: Texture2DArray::applyTexImage2DArray_subload(..) the given layer number exceeds the maximum number of supported layers."<<std::endl;
@@ -440,10 +453,10 @@ void Texture2DArray::applyTexImage2DArray_subload(State& state, Image* image, GL
     }
 
     //Rescale if resize hint is set or NPOT not supported or dimensions exceed max size
-    if( _resizeNonPowerOfTwoHint || !texExtensions->isNonPowerOfTwoTextureSupported(_min_filter)
-        || inwidth > extensions->max2DSize()
-        || inheight > extensions->max2DSize())
-        image->ensureValidSizeForTexturing(extensions->max2DSize());
+    if( _resizeNonPowerOfTwoHint || !extensions->isNonPowerOfTwoTextureSupported(_min_filter)
+        || inwidth > extensions->max2DSize
+        || inheight > extensions->max2DSize)
+        image->ensureValidSizeForTexturing(extensions->max2DSize);
 
     // image size or format has changed, this is not allowed, hence return
     if (image->s()!=inwidth ||
@@ -460,7 +473,7 @@ void Texture2DArray::applyTexImage2DArray_subload(State& state, Image* image, GL
 #endif
 
     bool useHardwareMipmapGeneration =
-        !image->isMipmap() && _useHardwareMipMapGeneration && texExtensions->isGenerateMipMapSupported();
+        !image->isMipmap() && _useHardwareMipMapGeneration && extensions->isGenerateMipMapSupported;
 
     // if no special mipmapping is required, then
     if( _min_filter == LINEAR || _min_filter == NEAREST || useHardwareMipmapGeneration )
@@ -569,7 +582,7 @@ void Texture2DArray::applyTexImage2DArray_subload(State& state, Image* image, GL
 void Texture2DArray::copyTexSubImage2DArray(State& state, int xoffset, int yoffset, int zoffset, int x, int y, int width, int height )
 {
     const unsigned int contextID = state.getContextID();
-    const Extensions* extensions = getExtensions(contextID,true);
+    const GLExtensions* extensions = state.get<GLExtensions>();
 
     // get the texture object for the current contextID.
     TextureObject* textureObject = getTextureObject(contextID);
@@ -601,7 +614,7 @@ void Texture2DArray::allocateMipmap(State& state) const
 
     if (textureObject && _textureWidth != 0 && _textureHeight != 0 && _textureDepth != 0)
     {
-        const Extensions* extensions = getExtensions(contextID,true);
+        const GLExtensions* extensions = state.get<GLExtensions>();
 
         int safeSourceFormat = _sourceFormat ? _sourceFormat : _internalFormat;
 
@@ -659,133 +672,3 @@ void Texture2DArray::allocateMipmap(State& state) const
         state.haveAppliedTextureAttribute(state.getActiveTextureUnit(), this);
     }
 }
-
-typedef buffered_value< ref_ptr<Texture2DArray::Extensions> > BufferedExtensions;
-static BufferedExtensions s_extensions;
-
-Texture2DArray::Extensions* Texture2DArray::getExtensions(unsigned int contextID,bool createIfNotInitalized)
-{
-    if (!s_extensions[contextID] && createIfNotInitalized) s_extensions[contextID] = new Extensions(contextID);
-    return s_extensions[contextID].get();
-}
-
-void Texture2DArray::setExtensions(unsigned int contextID,Extensions* extensions)
-{
-    s_extensions[contextID] = extensions;
-}
-
-Texture2DArray::Extensions::Extensions(unsigned int contextID)
-{
-    setupGLExtensions(contextID);
-}
-
-Texture2DArray::Extensions::Extensions(const Extensions& rhs):
-    Referenced()
-{
-    _isTexture3DSupported = rhs._isTexture3DSupported;
-    _isTexture2DArraySupported = rhs._isTexture2DArraySupported;
-
-    _max2DSize = rhs._max2DSize;
-    _maxLayerCount = rhs._maxLayerCount;
-
-    _glTexImage3D = rhs._glTexImage3D;
-    _glTexSubImage3D = rhs._glTexSubImage3D;
-    _glCopyTexSubImage3D = rhs._glCopyTexSubImage3D;
-    _glCompressedTexImage3D = rhs._glCompressedTexImage3D;
-    _glCompressedTexSubImage3D = rhs._glCompressedTexSubImage3D;;
-}
-
-void Texture2DArray::Extensions::lowestCommonDenominator(const Extensions& rhs)
-{
-    if (!rhs._isTexture3DSupported)                 _isTexture3DSupported = false;
-    if (!rhs._isTexture2DArraySupported)            _isTexture2DArraySupported = false;
-    if (rhs._max2DSize<_max2DSize)                  _max2DSize = rhs._max2DSize;
-    if (rhs._maxLayerCount<_maxLayerCount)          _maxLayerCount = rhs._maxLayerCount;
-
-    if (!rhs._glTexImage3D)                         _glTexImage3D = 0;
-    if (!rhs._glTexSubImage3D)                      _glTexSubImage3D = 0;
-    if (!rhs._glCompressedTexImage3D)               _glTexImage3D = 0;
-    if (!rhs._glCompressedTexSubImage3D)            _glTexSubImage3D = 0;
-    if (!rhs._glCopyTexSubImage3D)                  _glCopyTexSubImage3D = 0;
-}
-
-void Texture2DArray::Extensions::setupGLExtensions(unsigned int contextID)
-{
-    _isTexture3DSupported = OSG_GL3_FEATURES ||
-                            isGLExtensionSupported(contextID,"GL_EXT_texture3D") ||
-                            strncmp((const char*)glGetString(GL_VERSION),"1.2",3)>=0;
-
-    _isTexture2DArraySupported = OSG_GL3_FEATURES || isGLExtensionSupported(contextID,"GL_EXT_texture_array");
-
-    _max2DSize = 0;
-    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &_max2DSize);
-    _maxLayerCount = 0;
-    glGetIntegerv(GL_MAX_ARRAY_TEXTURE_LAYERS_EXT, &_maxLayerCount);
-
-    setGLExtensionFuncPtr(_glTexImage3D, "glTexImage3D","glTexImage3DEXT");
-    setGLExtensionFuncPtr(_glTexSubImage3D, "glTexSubImage3D","glTexSubImage3DEXT");
-    setGLExtensionFuncPtr(_glCompressedTexImage3D, "glCompressedTexImage3D","glCompressedTexImage3DARB");
-    setGLExtensionFuncPtr(_glCompressedTexSubImage3D, "glCompressedTexSubImage3D","glCompressedTexSubImage3DARB");
-    setGLExtensionFuncPtr(_glCopyTexSubImage3D, "glCopyTexSubImage3D","glCopyTexSubImage3DEXT");
-}
-
-void Texture2DArray::Extensions::glTexImage3D( GLenum target, GLint level, GLenum internalFormat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels) const
-{
-    if (_glTexImage3D)
-    {
-        _glTexImage3D( target, level, internalFormat, width, height, depth, border, format, type, pixels);
-    }
-    else
-    {
-        OSG_WARN<<"Error: glTexImage3D not supported by OpenGL driver"<<std::endl;
-    }
-}
-
-void Texture2DArray::Extensions::glTexSubImage3D( GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels) const
-{
-    if (_glTexSubImage3D)
-    {
-        _glTexSubImage3D( target, level, xoffset, yoffset, zoffset, width, height, depth, format, type, pixels);
-    }
-    else
-    {
-        OSG_WARN<<"Error: glTexSubImage3D not supported by OpenGL driver"<<std::endl;
-    }
-}
-
-void Texture2DArray::Extensions::glCompressedTexImage3D(GLenum target, GLint level, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLsizei imageSize, const GLvoid *data) const
-{
-    if (_glCompressedTexImage3D)
-    {
-        _glCompressedTexImage3D(target, level, internalformat, width, height, depth, border, imageSize, data);
-    }
-    else
-    {
-        OSG_WARN<<"Error: glCompressedTexImage3D not supported by OpenGL driver"<<std::endl;
-    }
-}
-
-void Texture2DArray::Extensions::glCompressedTexSubImage3D( GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLsizei imageSize, const GLvoid *data ) const
-{
-    if (_glCompressedTexSubImage3D)
-    {
-        _glCompressedTexSubImage3D(target, level, xoffset, yoffset, zoffset, width, height, depth, format, imageSize, data);
-    }
-    else
-    {
-        OSG_WARN<<"Error: glCompressedTexImage2D not supported by OpenGL driver"<<std::endl;
-    }
-}
-
-void Texture2DArray::Extensions::glCopyTexSubImage3D( GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLint x, GLint y, GLsizei width, GLsizei height ) const
-{
-    if (_glCopyTexSubImage3D)
-    {
-        _glCopyTexSubImage3D(target, level, xoffset, yoffset, zoffset, x, y, width, height);
-    }
-    else
-    {
-        OSG_WARN<<"Error: glCopyTexSubImage3D not supported by OpenGL driver"<<std::endl;
-    }
-}
-

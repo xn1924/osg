@@ -2,13 +2,8 @@
 #define OSG2_BINARYSTREAMOPERATOR
 
 #include <osgDB/StreamOperator>
-
-#if defined(_MSC_VER)
-typedef unsigned __int32 uint32_t;
-typedef __int32 int32_t;
-#else
-#include <stdint.h>
-#endif
+#include <osg/Types>
+#include <vector>
 
 
 class BinaryOutputIterator : public osgDB::OutputIterator
@@ -67,9 +62,9 @@ public:
         _out->write( s.c_str(), s.size() );
     }
 
-    virtual void writeStream( std::ostream& (*fn)(std::ostream&) ) {}
+    virtual void writeStream( std::ostream& (* /*fn*/)(std::ostream&) ) {}
 
-    virtual void writeBase( std::ios_base& (*fn)(std::ios_base&) ) {}
+    virtual void writeBase( std::ios_base& (* /*fn*/)(std::ios_base&) ) {}
 
     virtual void writeGLenum( const osgDB::ObjectGLenum& value )
     { GLenum e = value.get(); _out->write((char*)&e, osgDB::GLENUM_SIZE); }
@@ -77,13 +72,38 @@ public:
     virtual void writeProperty( const osgDB::ObjectProperty& prop )
     { if (prop._mapProperty) _out->write((char*)&(prop._value), osgDB::INT_SIZE); }
 
-    virtual void writeMark( const osgDB::ObjectMark& mark ) {}
+    virtual void writeMark( const osgDB::ObjectMark& mark )
+    {
+        if ( _supportBinaryBrackets )
+        {
+            if ( mark._name=="{" )
+            {
+                int size = 0;
+                _beginPositions.push_back( _out->tellp() );
+                _out->write( (char*)&size, osgDB::INT_SIZE );
+            }
+            else if ( mark._name=="}" && _beginPositions.size()>0 )
+            {
+                std::streampos pos = _out->tellp(), beginPos = _beginPositions.back();
+                _beginPositions.pop_back();
+                _out->seekp( beginPos );
+
+                std::streampos size64 = pos - beginPos;
+                int size = (int) size64;
+                _out->write( (char*)&size, osgDB::INT_SIZE );
+                _out->seekp( pos );
+            }
+        }
+    }
 
     virtual void writeCharArray( const char* s, unsigned int size )
     { if ( size>0 ) _out->write( s, size ); }
 
     virtual void writeWrappedString( const std::string& str )
     { writeString( str ); }
+
+protected:
+    std::vector<std::streampos> _beginPositions;
 };
 
 class BinaryInputIterator : public osgDB::InputIterator
@@ -183,9 +203,9 @@ public:
         }
     }
 
-    virtual void readStream( std::istream& (*fn)(std::istream&) ) {}
+    virtual void readStream( std::istream& (* /*fn*/)(std::istream&) ) {}
 
-    virtual void readBase( std::ios_base& (*fn)(std::ios_base&) ) {}
+    virtual void readBase( std::ios_base& (* /*fn*/)(std::ios_base&) ) {}
 
     virtual void readGLenum( osgDB::ObjectGLenum& value )
     {
@@ -206,7 +226,26 @@ public:
         prop.set( value );
     }
 
-    virtual void readMark( osgDB::ObjectMark& mark ) {}
+    virtual void readMark( osgDB::ObjectMark& mark )
+    {
+        if ( _supportBinaryBrackets )
+        {
+            if ( mark._name=="{" )
+            {
+                int size = 0;
+                _beginPositions.push_back( _in->tellg() );
+
+                _in->read( (char*)&size, osgDB::INT_SIZE );
+                if ( _byteSwap ) osg::swapBytes( (char*)&size, osgDB::INT_SIZE );
+                _blockSizes.push_back( size );
+            }
+            else if ( mark._name=="}" && _beginPositions.size()>0 )
+            {
+                _beginPositions.pop_back();
+                _blockSizes.pop_back();
+            }
+        }
+    }
 
     virtual void readCharArray( char* s, unsigned int size )
     { if ( size>0 ) _in->read( s, size ); }
@@ -214,7 +253,21 @@ public:
     virtual void readWrappedString( std::string& str )
     { readString( str ); }
 
+    virtual void advanceToCurrentEndBracket()
+    {
+        if ( _supportBinaryBrackets && _beginPositions.size()>0 )
+        {
+            std::streampos position(_beginPositions.back());
+            position += _blockSizes.back();
+            _in->seekg( position );
+            _beginPositions.pop_back();
+            _blockSizes.pop_back();
+        }
+    }
+
 protected:
+    std::vector<std::streampos> _beginPositions;
+    std::vector<int> _blockSizes;
 };
 
 #endif

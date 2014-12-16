@@ -251,11 +251,6 @@ void StatsVisitor::apply(osg::Geode& node)
     ++_numInstancedGeode;
     _geodeSet.insert(&node);
 
-    for(unsigned int i=0; i<node.getNumDrawables();++i)
-    {
-        apply(*node.getDrawable(i));
-    }
-
     traverse(node);
 }
 
@@ -278,11 +273,8 @@ void StatsVisitor::apply(osg::Drawable& drawable)
         ++_numInstancedGeometry;
         _geometrySet.insert(geometry);
 
-        if (geometry->areFastPathsUsed())
-        {
-            ++_numInstancedFastGeometry;
-            _fastGeometrySet.insert(geometry);
-        }
+        ++_numInstancedFastGeometry;
+        _fastGeometrySet.insert(geometry);
     }
 }
 

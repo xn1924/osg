@@ -421,11 +421,15 @@ RenderBin* RenderBin::find_or_insert(int binNum,const std::string& binName)
 
 void RenderBin::draw(osg::RenderInfo& renderInfo,RenderLeaf*& previous)
 {
+    renderInfo.pushRenderBin(this);
+
     if (_drawCallback.valid())
     {
         _drawCallback->drawImplementation(this,renderInfo,previous);
     }
     else drawImplementation(renderInfo,previous);
+
+    renderInfo.popRenderBin();
 }
 
 void RenderBin::drawImplementation(osg::RenderInfo& renderInfo,RenderLeaf*& previous)
@@ -543,8 +547,7 @@ bool RenderBin::getStats(Statistics& stats) const
         const Geometry* geom = dw->asGeometry();
         if (geom)
         {
-            if (geom->areFastPathsUsed())
-                stats.addFastDrawable();
+            stats.addFastDrawable();
         }
 
         if (rl->_modelview.get())
@@ -576,8 +579,7 @@ bool RenderBin::getStats(Statistics& stats) const
             const Geometry* geom = dw->asGeometry();
             if (geom)
             {
-                if (geom->areFastPathsUsed())
-                    stats.addFastDrawable();
+                stats.addFastDrawable();
             }
 
             if (rl->_modelview.get()) stats.addMatrix(); // number of matrices

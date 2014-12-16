@@ -17,6 +17,7 @@
 #include "Object.h"
 
 #include <osg/Notify>
+#include <osgDB/Options>
 
 using namespace ive;
 
@@ -37,23 +38,17 @@ void ImageSequence::write(DataOutputStream* out)
     out->writeInt(getMode());
     out->writeDouble(getLength());
 
-    out->writeUInt(getFileNames().size());
-    for(FileNames::iterator itr = getFileNames().begin();
-        itr != getFileNames().end();
+    out->writeUInt(getImageDataList().size());
+    for(ImageDataList::iterator itr = getImageDataList().begin();
+        itr != getImageDataList().end();
         ++itr)
     {
-        out->writeString(*itr);
+        out->writeString(itr->_filename);
     }
 
-    if (getFileNames().empty())
+    if (getImageDataList().empty())
     {
-        out->writeUInt(getImages().size());
-        for(Images::iterator itr = getImages().begin();
-            itr != getImages().end();
-            ++itr)
-        {
-            out->writeImage(itr->get());
-        }
+        out->writeUInt(0);
     }
 
 }
@@ -81,6 +76,7 @@ void ImageSequence::read(DataInputStream* in)
         unsigned int numFileNames = in->readUInt();
         if (numFileNames>0)
         {
+            if (in->getOptions()) setReadOptions(new osgDB::Options(*in->getOptions()));
             for(unsigned int i=0; i<numFileNames; ++i)
             {
                 addImageFile(in->readString());

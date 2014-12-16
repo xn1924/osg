@@ -31,35 +31,47 @@ GLObjectsVisitor::GLObjectsVisitor(Mode mode)
 
 }
 
-
 void GLObjectsVisitor::apply(osg::Node& node)
 {
+    bool programSetBefore = _lastCompiledProgram.valid();
+
     if (node.getStateSet())
     {
         apply(*(node.getStateSet()));
     }
 
     traverse(node);
+
+    bool programSetAfter = _renderInfo.getState()->getLastAppliedProgramObject()!=0;
+    if (programSetBefore && !programSetAfter)
+    {
+        osg::State* state = _renderInfo.getState();
+        osg::GLExtensions* extensions = state->get<osg::GLExtensions>();
+        extensions->glUseProgram(0);
+        state->setLastAppliedProgramObject(0);
+        _lastCompiledProgram = 0;
+    }
 }
 
 void GLObjectsVisitor::apply(osg::Geode& node)
 {
+    bool programSetBefore = _lastCompiledProgram.valid();
+
     if (node.getStateSet())
     {
         apply(*(node.getStateSet()));
     }
 
-    for(unsigned int i=0;i<node.getNumDrawables();++i)
+    traverse(node);
+
+    bool programSetAfter = _lastCompiledProgram.valid();
+    if (!programSetBefore && programSetAfter)
     {
-        osg::Drawable* drawable = node.getDrawable(i);
-        if (drawable)
-        {
-            apply(*drawable);
-            if (drawable->getStateSet())
-            {
-                apply(*(drawable->getStateSet()));
-            }
-        }
+        osg::State* state = _renderInfo.getState();
+        osg::GLExtensions* extensions = state->get<osg::GLExtensions>();
+        extensions->glUseProgram(0);
+        state->setLastAppliedProgramObject(0);
+        _lastCompiledProgram = 0;
     }
 }
 
@@ -99,6 +111,11 @@ void GLObjectsVisitor::apply(osg::Drawable& drawable)
     {
         drawable.releaseGLObjects(_renderInfo.getState());
     }
+
+    if (drawable.getStateSet())
+    {
+        apply(*(drawable.getStateSet()));
+    }
 }
 
 void GLObjectsVisitor::apply(osg::StateSet& stateset)
@@ -128,8 +145,8 @@ void GLObjectsVisitor::apply(osg::StateSet& stateset)
 
                 _renderInfo.getState()->setLastAppliedProgramObject(pcp);
 
-                osg::StateSet::UniformList& ul = stateset.getUniformList();
-                for(osg::StateSet::UniformList::iterator itr = ul.begin();
+                const osg::StateSet::UniformList& ul = stateset.getUniformList();
+                for(osg::StateSet::UniformList::const_iterator itr = ul.begin();
                     itr != ul.end();
                     ++itr)
                 {
@@ -137,9 +154,10 @@ void GLObjectsVisitor::apply(osg::StateSet& stateset)
                 }
             }
         }
-        else if(_renderInfo.getState()->getLastAppliedProgramObject()){
-
-            osg::GL2Extensions* extensions = osg::GL2Extensions::Get(_renderInfo.getState()->getContextID(), true);
+        else if(_renderInfo.getState()->getLastAppliedProgramObject())
+        {
+            osg::State* state = _renderInfo.getState();
+            osg::GLExtensions* extensions = state->get<osg::GLExtensions>();
             extensions->glUseProgram(0);
             _renderInfo.getState()->setLastAppliedProgramObject(0);
         }
@@ -159,7 +177,7 @@ void GLObjectsVisitor::apply(osg::StateSet& stateset)
 
 /////////////////////////////////////////////////////////////////
 //
-// GLObjectsVisitor
+// GLObjectsOperation
 //
 
 GLObjectsOperation::GLObjectsOperation(GLObjectsVisitor::Mode mode):

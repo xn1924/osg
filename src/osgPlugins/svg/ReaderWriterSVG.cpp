@@ -22,8 +22,11 @@
 #include <osgDB/ImageOptions>
 
 extern "C" {
-        #include <librsvg/rsvg.h>
+    #include <librsvg/rsvg.h>
+
+    #ifndef LIBRSVG_CHECK_VERSION
         #include <librsvg/rsvg-cairo.h>
+    #endif
 }
 
 class ReaderWriterSVG : public osgDB::ReaderWriter
@@ -33,7 +36,6 @@ class ReaderWriterSVG : public osgDB::ReaderWriter
         ReaderWriterSVG()
         {
                 supportsExtension("svg","Scalar Vector Graphics format");
-                rsvg_init();
         }
 
         virtual const char* className() const { return "SVG Image Reader"; }
@@ -76,7 +78,7 @@ class ReaderWriterSVG : public osgDB::ReaderWriter
                 else{
                         image = createImage(handle, dimensionData.width, dimensionData.height);
                 }
-                rsvg_handle_free(handle);
+                g_object_unref(handle);
                 image->setFileName(file);
                 return image;
         }
@@ -110,7 +112,7 @@ class ReaderWriterSVG : public osgDB::ReaderWriter
     protected:
         virtual ~ReaderWriterSVG()
         {
-                rsvg_term();
+                rsvg_cleanup();
         }
 };
 

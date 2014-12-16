@@ -514,6 +514,9 @@ public:
 
     META_Object(osgViewer, InteractiveImageHandler);
 
+    // use the osgGA::GUIEventHandler implementation of run.
+    virtual bool run(osg::Object* object, osg::Object* data) { return osgGA::GUIEventHandler::run(object, data); }
+
     virtual bool handle(const osgGA::GUIEventAdapter& ea,osgGA::GUIActionAdapter& aa, osg::Object*, osg::NodeVisitor* nv);
 
     virtual bool cull(osg::NodeVisitor* nv, osg::Drawable* drawable, osg::RenderInfo* renderInfo) const;
@@ -525,10 +528,9 @@ protected:
     InteractiveImageHandler() {}
 
     InteractiveImageHandler(const InteractiveImageHandler&,const osg::CopyOp& = osg::CopyOp::SHALLOW_COPY):
-        osg::Object(), osgGA::GUIEventHandler(), osg::Drawable::CullCallback(), _fullscreen(false) {}
+        osg::Callback(), osgGA::GUIEventHandler(), osg::Drawable::CullCallback(), _fullscreen(false) {}
 
     bool mousePosition(osgViewer::View* view, osg::NodeVisitor* nv, const osgGA::GUIEventAdapter& ea, int& x, int &y) const;
-    bool computeIntersections(osgViewer::View* view, float x,float y, const osg::NodePath& nodePath, osgUtil::LineSegmentIntersector::Intersections& intersections,osg::Node::NodeMask traversalMask = 0xffffffff) const;
 
     void resize(int width, int height);
 

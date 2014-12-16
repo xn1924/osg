@@ -18,7 +18,7 @@
 #include <osg/BufferObject>
 #include <osg/Notify>
 #include <osg/GLExtensions>
-#include <osg/GL2Extensions>
+#include <osg/GLExtensions>
 #include <osg/Timer>
 #include <osg/Image>
 #include <osg/State>
@@ -35,6 +35,15 @@
 #endif
 
 using namespace osg;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// GLBufferObject::BufferEntry
+//
+unsigned int GLBufferObject::BufferEntry::getNumClients() const
+{
+    return dataSource->getNumClients();
+}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -55,7 +64,7 @@ GLBufferObject::GLBufferObject(unsigned int contextID, BufferObject* bufferObjec
 {
     assign(bufferObject);
 
-    _extensions = GLBufferObject::getExtensions(contextID, true);
+    _extensions = GLExtensions::Get(contextID, true);
 
     if (glObjectID==0)
     {
@@ -129,9 +138,9 @@ void GLBufferObject::compileBuffer()
 
                 // OSG_NOTICE<<"GLBufferObject::compileBuffer(..) updating BufferEntry"<<std::endl;
 
-
-                entry.offset = newTotalSize;
+                entry.numRead = 0;
                 entry.modifiedCount = 0xffffff;
+                entry.offset = newTotalSize;
                 entry.dataSize = bd->getTotalDataSize();
                 entry.dataSource = bd;
 
@@ -203,6 +212,7 @@ void GLBufferObject::compileBuffer()
         if (entry.dataSource && (compileAll || entry.modifiedCount != entry.dataSource->getModifiedCount()))
         {
             // OSG_NOTICE<<"GLBufferObject::compileBuffer(..) downloading BufferEntry "<<&entry<<std::endl;
+            entry.numRead = 0;
             entry.modifiedCount = entry.dataSource->getModifiedCount();
 
             const osg::Image* image = entry.dataSource->asImage();
@@ -212,15 +222,14 @@ void GLBufferObject::compileBuffer()
                 for(osg::Image::DataIterator img_itr(image); img_itr.valid(); ++img_itr)
                 {
                     //OSG_NOTICE<<"Copying to buffer object using DataIterator, offset="<<offset<<", size="<<img_itr.size()<<", data="<<(void*)img_itr.data()<<std::endl;
-                    _extensions->glBufferSubData(_profile._target, (GLintptrARB)offset, (GLsizeiptrARB)img_itr.size(), img_itr.data());
+                    _extensions->glBufferSubData(_profile._target, (GLintptr)offset, (GLsizeiptr)img_itr.size(), img_itr.data());
                     offset += img_itr.size();
                 }
             }
             else
             {
-                _extensions->glBufferSubData(_profile._target, (GLintptrARB)entry.offset, (GLsizeiptrARB)entry.dataSize, entry.dataSource->getDataPointer());
+                _extensions->glBufferSubData(_profile._target, (GLintptr)entry.offset, (GLsizeiptr)entry.dataSize, entry.dataSource->getDataPointer());
             }
-
         }
     }
 }
@@ -238,179 +247,23 @@ void GLBufferObject::deleteGLObject()
     }
 }
 
-//////////////////////////////////////////////////////////////////////////////
-//
-//  Extension support
-//
-
-typedef buffered_value< ref_ptr<GLBufferObject::Extensions> > BufferedExtensions;
-static BufferedExtensions s_extensions;
-
-GLBufferObject::Extensions* GLBufferObject::getExtensions(unsigned int contextID,bool createIfNotInitalized)
+bool GLBufferObject::hasAllBufferDataBeenRead() const
 {
-    if (!s_extensions[contextID] && createIfNotInitalized) s_extensions[contextID] = new GLBufferObject::Extensions(contextID);
-    return s_extensions[contextID].get();
-}
-
-void GLBufferObject::setExtensions(unsigned int contextID,Extensions* extensions)
-{
-    s_extensions[contextID] = extensions;
-}
-
-GLBufferObject::Extensions::Extensions(unsigned int contextID)
-{
-    setupGLExtensions(contextID);
-}
-
-GLBufferObject::Extensions::Extensions(const Extensions& rhs):
-    Referenced()
-{
-    _glGenBuffers = rhs._glGenBuffers;
-    _glBindBuffer = rhs._glBindBuffer;
-    _glBufferData = rhs._glBufferData;
-    _glBufferSubData = rhs._glBufferSubData;
-    _glDeleteBuffers = rhs._glDeleteBuffers;
-    _glIsBuffer = rhs._glIsBuffer;
-    _glGetBufferSubData = rhs._glGetBufferSubData;
-    _glMapBuffer = rhs._glMapBuffer;
-    _glUnmapBuffer = rhs._glUnmapBuffer;
-    _glGetBufferParameteriv = rhs._glGetBufferParameteriv;
-    _glGetBufferPointerv = rhs._glGetBufferPointerv;
-    _glBindBufferRange = rhs._glBindBufferRange;
-    _glBindBufferBase = rhs._glBindBufferBase;
-
-}
-
-
-void GLBufferObject::Extensions::lowestCommonDenominator(const Extensions& rhs)
-{
-    if (!rhs._glGenBuffers) _glGenBuffers = rhs._glGenBuffers;
-    if (!rhs._glBindBuffer) _glBindBuffer = rhs._glBindBuffer;
-    if (!rhs._glBufferData) _glBufferData = rhs._glBufferData;
-    if (!rhs._glBufferSubData) _glBufferSubData = rhs._glBufferSubData;
-    if (!rhs._glDeleteBuffers) _glDeleteBuffers = rhs._glDeleteBuffers;
-    if (!rhs._glIsBuffer) _glIsBuffer = rhs._glIsBuffer;
-    if (!rhs._glGetBufferSubData) _glGetBufferSubData = rhs._glGetBufferSubData;
-    if (!rhs._glMapBuffer) _glMapBuffer = rhs._glMapBuffer;
-    if (!rhs._glUnmapBuffer) _glUnmapBuffer = rhs._glUnmapBuffer;
-    if (!rhs._glGetBufferParameteriv) _glGetBufferParameteriv = rhs._glGetBufferParameteriv;
-    if (!rhs._glGetBufferParameteriv) _glGetBufferPointerv = rhs._glGetBufferPointerv;
-    if (!rhs._glBindBufferRange) _glBindBufferRange = rhs._glBindBufferRange;
-    if (!rhs._glBindBufferBase) _glBindBufferBase = rhs._glBindBufferBase;
-
-    _isPBOSupported = rhs._isPBOSupported;
-    _isUniformBufferObjectSupported = rhs._isUniformBufferObjectSupported;
-}
-
-void GLBufferObject::Extensions::setupGLExtensions(unsigned int contextID)
-{
-    setGLExtensionFuncPtr(_glGenBuffers, "glGenBuffers","glGenBuffersARB");
-    setGLExtensionFuncPtr(_glBindBuffer, "glBindBuffer","glBindBufferARB");
-    setGLExtensionFuncPtr(_glBufferData, "glBufferData","glBufferDataARB");
-    setGLExtensionFuncPtr(_glBufferSubData, "glBufferSubData","glBufferSubDataARB");
-    setGLExtensionFuncPtr(_glDeleteBuffers, "glDeleteBuffers","glDeleteBuffersARB");
-    setGLExtensionFuncPtr(_glIsBuffer, "glIsBuffer","glIsBufferARB");
-    setGLExtensionFuncPtr(_glGetBufferSubData, "glGetBufferSubData","glGetBufferSubDataARB");
-    setGLExtensionFuncPtr(_glMapBuffer, "glMapBuffer","glMapBufferARB");
-    setGLExtensionFuncPtr(_glUnmapBuffer, "glUnmapBuffer","glUnmapBufferARB");
-    setGLExtensionFuncPtr(_glGetBufferParameteriv, "glGetBufferParameteriv","glGetBufferParameterivARB");
-    setGLExtensionFuncPtr(_glGetBufferPointerv, "glGetBufferPointerv","glGetBufferPointervARB");
-    setGLExtensionFuncPtr(_glBindBufferRange, "glBindBufferRange");
-    setGLExtensionFuncPtr(_glBindBufferBase, "glBindBufferBase");
-
-    _isPBOSupported = OSG_GL3_FEATURES || osg::isGLExtensionSupported(contextID,"GL_ARB_pixel_buffer_object");
-    _isUniformBufferObjectSupported = osg::isGLExtensionSupported(contextID, "GL_ARB_uniform_buffer_object");
-}
-
-void GLBufferObject::Extensions::glGenBuffers(GLsizei n, GLuint *buffers) const
-{
-    if (_glGenBuffers) _glGenBuffers(n, buffers);
-    else OSG_WARN<<"Error: glGenBuffers not supported by OpenGL driver"<<std::endl;
-}
-
-void GLBufferObject::Extensions::glBindBuffer(GLenum target, GLuint buffer) const
-{
-    if (_glBindBuffer) _glBindBuffer(target, buffer);
-    else OSG_WARN<<"Error: glBindBuffer not supported by OpenGL driver"<<std::endl;
-}
-
-void GLBufferObject::Extensions::glBufferData(GLenum target, GLsizeiptrARB size, const GLvoid *data, GLenum usage) const
-{
-    if (_glBufferData) _glBufferData(target, size, data, usage);
-    else OSG_WARN<<"Error: glBufferData not supported by OpenGL driver"<<std::endl;
-}
-
-void GLBufferObject::Extensions::glBufferSubData(GLenum target, GLintptrARB offset, GLsizeiptrARB size, const GLvoid *data) const
-{
-    if (_glBufferSubData) _glBufferSubData(target, offset, size, data);
-    else OSG_WARN<<"Error: glBufferData not supported by OpenGL driver"<<std::endl;
-}
-
-void GLBufferObject::Extensions::glDeleteBuffers(GLsizei n, const GLuint *buffers) const
-{
-    if (_glDeleteBuffers) _glDeleteBuffers(n, buffers);
-    else OSG_WARN<<"Error: glBufferData not supported by OpenGL driver"<<std::endl;
-}
-
-GLboolean GLBufferObject::Extensions::glIsBuffer (GLuint buffer) const
-{
-    if (_glIsBuffer) return _glIsBuffer(buffer);
-    else
+    for (BufferEntries::const_iterator it=_bufferEntries.begin(); it!=_bufferEntries.end(); ++it)
     {
-        OSG_WARN<<"Error: glIsBuffer not supported by OpenGL driver"<<std::endl;
-        return GL_FALSE;
+        if (it->numRead < it->getNumClients())
+            return false;
     }
+
+    return true;
 }
 
-void GLBufferObject::Extensions::glGetBufferSubData (GLenum target, GLintptrARB offset, GLsizeiptrARB size, GLvoid *data) const
+void GLBufferObject::setBufferDataHasBeenRead(const osg::BufferData* bd)
 {
-    if (_glGetBufferSubData) _glGetBufferSubData(target,offset,size,data);
-    else OSG_WARN<<"Error: glGetBufferSubData not supported by OpenGL driver"<<std::endl;
+    BufferEntry &entry = _bufferEntries[bd->getBufferIndex()];
+    ++entry.numRead;
 }
 
-GLvoid* GLBufferObject::Extensions::glMapBuffer (GLenum target, GLenum access) const
-{
-    if (_glMapBuffer) return _glMapBuffer(target,access);
-    else
-    {
-        OSG_WARN<<"Error: glMapBuffer not supported by OpenGL driver"<<std::endl;
-        return 0;
-    }
-}
-
-GLboolean GLBufferObject::Extensions::glUnmapBuffer (GLenum target) const
-{
-    if (_glUnmapBuffer) return _glUnmapBuffer(target);
-    else
-    {
-        OSG_WARN<<"Error: glUnmapBuffer not supported by OpenGL driver"<<std::endl;
-        return GL_FALSE;
-    }
-}
-
-void GLBufferObject::Extensions::glGetBufferParameteriv (GLenum target, GLenum pname, GLint *params) const
-{
-    if (_glGetBufferParameteriv) _glGetBufferParameteriv(target,pname,params);
-    else OSG_WARN<<"Error: glGetBufferParameteriv not supported by OpenGL driver"<<std::endl;
-}
-
-void GLBufferObject::Extensions::glGetBufferPointerv (GLenum target, GLenum pname, GLvoid* *params) const
-{
-    if (_glGetBufferPointerv) _glGetBufferPointerv(target,pname,params);
-    else OSG_WARN<<"Error: glGetBufferPointerv not supported by OpenGL driver"<<std::endl;
-}
-
-void GLBufferObject::Extensions::glBindBufferRange (GLenum target, GLuint index, GLuint buffer, GLintptr offset, GLsizeiptr size)
-{
-    if (_glBindBufferRange) _glBindBufferRange(target, index, buffer, offset, size);
-    else OSG_WARN<<"Error: glBindBufferRange not supported by OpenGL driver\n";
-}
-
-void GLBufferObject::Extensions::glBindBufferBase (GLenum target, GLuint index, GLuint buffer)
-{
-    if (_glBindBufferBase) _glBindBufferBase(target, index, buffer);
-    else OSG_WARN<<"Error: glBindBufferBase not supported by OpenGL driver\n";
-}
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // GLBufferObjectSet
@@ -649,7 +502,7 @@ void GLBufferObjectSet::discardAllDeletedGLBufferObjects()
     _orphanedGLBufferObjects.clear();
 }
 
-void GLBufferObjectSet::flushDeletedGLBufferObjects(double currentTime, double& availableTime)
+void GLBufferObjectSet::flushDeletedGLBufferObjects(double /*currentTime*/, double& availableTime)
 {
     {
         OpenThreads::ScopedLock<OpenThreads::Mutex> lock(_mutex);
@@ -1641,7 +1494,7 @@ void PixelDataBufferObject::bindBufferInWriteMode(State& state)
 //--------------------------------------------------------------------------------
 void PixelDataBufferObject::unbindBuffer(unsigned int contextID) const
 {
-    GLBufferObject::Extensions* extensions = GLBufferObject::getExtensions(contextID,true);
+    GLExtensions* extensions = GLExtensions::Get(contextID, true);
 
     switch(_mode[contextID])
     {
@@ -1707,3 +1560,25 @@ AtomicCounterBufferObject::AtomicCounterBufferObject(const AtomicCounterBufferOb
 AtomicCounterBufferObject::~AtomicCounterBufferObject()
 {
 }
+
+
+//////////////////////////////////////////////////////////////////////////////////
+//
+//  ShaderStorageBufferObject
+//
+ShaderStorageBufferObject::ShaderStorageBufferObject()
+{
+    setTarget(GL_SHADER_STORAGE_BUFFER);
+    setUsage(GL_STATIC_DRAW);
+}
+
+ShaderStorageBufferObject::ShaderStorageBufferObject(const ShaderStorageBufferObject& ubo, const CopyOp& copyop)
+    : BufferObject(ubo, copyop)
+{
+}
+
+ShaderStorageBufferObject::~ShaderStorageBufferObject()
+{
+}
+
+

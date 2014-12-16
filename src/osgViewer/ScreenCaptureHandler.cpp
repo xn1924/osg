@@ -11,8 +11,6 @@
 * OpenSceneGraph Public License for more details.
 */
 
-#include <sstream>
-
 #include <osgDB/WriteFile>
 
 #include <osgViewer/Viewer>
@@ -74,8 +72,8 @@ class WindowCaptureCallback : public osg::Camera::DrawCallback
 
             void read();
             void readPixels();
-            void singlePBO(osg::GLBufferObject::Extensions* ext);
-            void multiPBO(osg::GLBufferObject::Extensions* ext);
+            void singlePBO(osg::GLExtensions* ext);
+            void multiPBO(osg::GLExtensions* ext);
 
             typedef std::vector< osg::ref_ptr<osg::Image> >             ImageBuffer;
             typedef std::vector< GLuint > PBOBuffer;
@@ -208,7 +206,7 @@ void WindowCaptureCallback::ContextData::updateTimings(osg::Timer_t tick_start,
                                                        osg::Timer_t tick_afterReadPixels,
                                                        osg::Timer_t tick_afterMemCpy,
                                                        osg::Timer_t tick_afterCaptureOperation,
-                                                       unsigned int dataSize)
+                                                       unsigned int /*dataSize*/)
 {
     _timeForReadPixels = osg::Timer::instance()->delta_s(tick_start, tick_afterReadPixels);
     _timeForMemCpy = osg::Timer::instance()->delta_s(tick_afterReadPixels, tick_afterMemCpy);
@@ -220,9 +218,9 @@ void WindowCaptureCallback::ContextData::updateTimings(osg::Timer_t tick_start,
 
 void WindowCaptureCallback::ContextData::read()
 {
-    osg::GLBufferObject::Extensions* ext = osg::GLBufferObject::getExtensions(_gc->getState()->getContextID(),true);
+    osg::GLExtensions* ext = osg::GLExtensions::Get(_gc->getState()->getContextID(),true);
 
-    if (ext->isPBOSupported() && !_pboBuffer.empty())
+    if (ext->isPBOSupported && !_pboBuffer.empty())
     {
         if (_pboBuffer.size()==1)
         {
@@ -277,7 +275,7 @@ void WindowCaptureCallback::ContextData::readPixels()
     _currentPboIndex = nextPboIndex;
 }
 
-void WindowCaptureCallback::ContextData::singlePBO(osg::GLBufferObject::Extensions* ext)
+void WindowCaptureCallback::ContextData::singlePBO(osg::GLExtensions* ext)
 {
     unsigned int nextImageIndex = (_currentImageIndex+1)%_imageBuffer.size();
 
@@ -352,7 +350,7 @@ void WindowCaptureCallback::ContextData::singlePBO(osg::GLBufferObject::Extensio
     _currentImageIndex = nextImageIndex;
 }
 
-void WindowCaptureCallback::ContextData::multiPBO(osg::GLBufferObject::Extensions* ext)
+void WindowCaptureCallback::ContextData::multiPBO(osg::GLExtensions* ext)
 {
     unsigned int nextImageIndex = (_currentImageIndex+1)%_imageBuffer.size();
     unsigned int nextPboIndex = (_currentPboIndex+1)%_pboBuffer.size();
@@ -773,6 +771,7 @@ bool ScreenCaptureHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIAc
                 _stopCapture = false;
                 removeCallbackFromViewer(*viewer);
             }
+            break;
         }
 
         case(osgGA::GUIEventAdapter::KEYUP):
@@ -805,7 +804,6 @@ bool ScreenCaptureHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIAc
                 }
                 return true;
             }
-
             break;
         }
     default:
@@ -851,17 +849,8 @@ void ScreenCaptureHandler::stopCapture()
 /** Get the keyboard and mouse usage of this manipulator.*/
 void ScreenCaptureHandler::getUsage(osg::ApplicationUsage& usage) const
 {
-    {
-        std::ostringstream ostr;
-        ostr<<char(_keyEventTakeScreenShot);
-        usage.addKeyboardMouseBinding(ostr.str(),"Take screenshot.");
-    }
-
-    {
-        std::ostringstream ostr;
-        ostr<<char(_keyEventToggleContinuousCapture);
-        usage.addKeyboardMouseBinding(ostr.str(),"Toggle continuous screen capture.");
-    }
+    usage.addKeyboardMouseBinding(_keyEventTakeScreenShot,"Take screenshot.");
+    usage.addKeyboardMouseBinding(_keyEventToggleContinuousCapture,"Toggle continuous screen capture.");
 }
 
 }

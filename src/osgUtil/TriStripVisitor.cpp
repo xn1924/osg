@@ -58,25 +58,25 @@ struct VertexAttribComparitor
 {
     VertexAttribComparitor(osg::Geometry& geometry)
     {
-        add(geometry.getVertexArray(),osg::Geometry::BIND_PER_VERTEX);
-        add(geometry.getNormalArray(),geometry.getNormalBinding());
-        add(geometry.getColorArray(),geometry.getColorBinding());
-        add(geometry.getSecondaryColorArray(),geometry.getSecondaryColorBinding());
-        add(geometry.getFogCoordArray(),geometry.getFogCoordBinding());
+        add(geometry.getVertexArray());
+        add(geometry.getNormalArray());
+        add(geometry.getColorArray());
+        add(geometry.getSecondaryColorArray());
+        add(geometry.getFogCoordArray());
         unsigned int i;
         for(i=0;i<geometry.getNumTexCoordArrays();++i)
         {
-            add(geometry.getTexCoordArray(i),osg::Geometry::BIND_PER_VERTEX);
+            add(geometry.getTexCoordArray(i));
         }
         for(i=0;i<geometry.getNumVertexAttribArrays();++i)
         {
-            add(geometry.getVertexAttribArray(i),geometry.getVertexAttribBinding(i));
+            add(geometry.getVertexAttribArray(i));
         }
     }
 
-    void add(osg::Array* array, osg::Geometry::AttributeBinding binding)
+    void add(osg::Array* array)
     {
-        if (binding==osg::Geometry::BIND_PER_VERTEX && array)
+        if (array && array->getBinding()==osg::Array::BIND_PER_VERTEX)
         {
             for(ArrayList::const_iterator itr=_arrayList.begin();
                 itr!=_arrayList.end();
@@ -214,29 +214,18 @@ typedef osg::TriangleIndexFunctor<MyTriangleOperator> MyTriangleIndexFunctor;
 
 void TriStripVisitor::stripify(Geometry& geom)
 {
+    if (geom.containsDeprecatedData()) geom.fixDeprecatedData();
 
-    if (geom.getNormalBinding()==osg::Geometry::BIND_PER_PRIMITIVE ||
-        geom.getNormalBinding()==osg::Geometry::BIND_PER_PRIMITIVE_SET) return;
+    if (osg::getBinding(geom.getNormalArray())==osg::Array::BIND_PER_PRIMITIVE_SET) return;
 
-    if (geom.getColorBinding()==osg::Geometry::BIND_PER_PRIMITIVE ||
-        geom.getColorBinding()==osg::Geometry::BIND_PER_PRIMITIVE_SET) return;
+    if (osg::getBinding(geom.getColorArray())==osg::Array::BIND_PER_PRIMITIVE_SET) return;
 
-    if (geom.getSecondaryColorBinding()==osg::Geometry::BIND_PER_PRIMITIVE ||
-        geom.getSecondaryColorBinding()==osg::Geometry::BIND_PER_PRIMITIVE_SET) return;
+    if (osg::getBinding(geom.getSecondaryColorArray())==osg::Array::BIND_PER_PRIMITIVE_SET) return;
 
-    if (geom.getFogCoordBinding()==osg::Geometry::BIND_PER_PRIMITIVE ||
-        geom.getFogCoordBinding()==osg::Geometry::BIND_PER_PRIMITIVE_SET) return;
+    if (osg::getBinding(geom.getFogCoordArray())==osg::Array::BIND_PER_PRIMITIVE_SET) return;
 
     // no point tri stripping if we don't have enough vertices.
     if (!geom.getVertexArray() || geom.getVertexArray()->getNumElements()<3) return;
-
-    // check to see if vertex attributes indices exists, if so expand them to remove them
-    if (geom.suitableForOptimization())
-    {
-        // removing coord indices
-        OSG_INFO<<"TriStripVisitor::stripify(Geometry&): Removing attribute indices"<<std::endl;
-        geom.copyToAndOptimize(geom);
-    }
 
     // check for the existence of surface primitives
     unsigned int numSurfacePrimitives = 0;
@@ -474,37 +463,18 @@ void TriStripVisitor::stripify(Geometry& geom)
                     indices.push_back(pitr->Indices[(min_pos+3)%4]);
                 }
 
-                bool inOrder = true;
-                unsigned int previousValue = indices.front();
-                for(IndexList::iterator qi_itr=indices.begin()+1;
-                    qi_itr!=indices.end() && inOrder;
-                    ++qi_itr)
+                unsigned int maxValue = *(std::max_element(indices.begin(),indices.end()));
+                if (maxValue>=65536)
                 {
-                    inOrder = (previousValue+1)==*qi_itr;
-                    previousValue = *qi_itr;
-                }
-
-
-                if (inOrder)
-                {
-                    new_primitives.push_back(new osg::DrawArrays(GL_QUADS,indices.front(),indices.size()));
+                    osg::DrawElementsUInt* elements = new osg::DrawElementsUInt(GL_QUADS);
+                    std::copy(indices.begin(),indices.end(),std::back_inserter(*elements));
+                    new_primitives.push_back(elements);
                 }
                 else
                 {
-                    unsigned int maxValue = *(std::max_element(indices.begin(),indices.end()));
-
-                    if (maxValue>=65536)
-                    {
-                        osg::DrawElementsUInt* elements = new osg::DrawElementsUInt(GL_QUADS);
-                        std::copy(indices.begin(),indices.end(),std::back_inserter(*elements));
-                        new_primitives.push_back(elements);
-                    }
-                    else
-                    {
-                        osg::DrawElementsUShort* elements = new osg::DrawElementsUShort(GL_QUADS);
-                        std::copy(indices.begin(),indices.end(),std::back_inserter(*elements));
-                        new_primitives.push_back(elements);
-                    }
+                    osg::DrawElementsUShort* elements = new osg::DrawElementsUShort(GL_QUADS);
+                    std::copy(indices.begin(),indices.end(),std::back_inserter(*elements));
+                    new_primitives.push_back(elements);
                 }
             }
         }
@@ -516,39 +486,26 @@ void TriStripVisitor::stripify(Geometry& geom)
         {
             if (!_generateFourPointPrimitivesQuads || pitr->Indices.size()!=4)
             {
-                bool inOrder = true;
-                unsigned int previousValue = pitr->Indices.front();
-                for(triangle_stripper::indices::iterator qi_itr=pitr->Indices.begin()+1;
-                    qi_itr!=pitr->Indices.end() && inOrder;
-                    ++qi_itr)
+                unsigned int maxValue = *(std::max_element(pitr->Indices.begin(),pitr->Indices.end()));
+                if (maxValue>=65536)
                 {
-                    inOrder = (previousValue+1)==*qi_itr;
-                    previousValue = *qi_itr;
-                }
-
-                if (inOrder)
-                {
-                    new_primitives.push_back(new osg::DrawArrays(pitr->Type,pitr->Indices.front(),pitr->Indices.size()));
+                    osg::DrawElementsUInt* elements = new osg::DrawElementsUInt(pitr->Type);
+                    elements->reserve(pitr->Indices.size());
+                    std::copy(pitr->Indices.begin(),pitr->Indices.end(),std::back_inserter(*elements));
+                    new_primitives.push_back(elements);
                 }
                 else
                 {
-                    unsigned int maxValue = *(std::max_element(pitr->Indices.begin(),pitr->Indices.end()));
-                    if (maxValue>=65536)
-                    {
-                        osg::DrawElementsUInt* elements = new osg::DrawElementsUInt(pitr->Type);
-                        elements->reserve(pitr->Indices.size());
-                        std::copy(pitr->Indices.begin(),pitr->Indices.end(),std::back_inserter(*elements));
-                        new_primitives.push_back(elements);
-                    }
-                    else
-                    {
-                        osg::DrawElementsUShort* elements = new osg::DrawElementsUShort(pitr->Type);
-                        elements->reserve(pitr->Indices.size());
-                        std::copy(pitr->Indices.begin(),pitr->Indices.end(),std::back_inserter(*elements));
-                        new_primitives.push_back(elements);
-                    }
+                    osg::DrawElementsUShort* elements = new osg::DrawElementsUShort(pitr->Type);
+                    elements->reserve(pitr->Indices.size());
+                    std::copy(pitr->Indices.begin(),pitr->Indices.end(),std::back_inserter(*elements));
+                    new_primitives.push_back(elements);
                 }
             }
+        }
+
+        if(_mergeTriangleStrips) {
+            mergeTriangleStrips(new_primitives);
         }
 
         geom.setPrimitiveSetList(new_primitives);
@@ -564,7 +521,7 @@ void TriStripVisitor::stripify(Geometry& geom)
                                      1.0f);
                 }
                 geom.setColorArray(colors);
-                geom.setColorBinding(osg::Geometry::BIND_PER_PRIMITIVE_SET);
+                geom.setColorBinding(osg::Array::BIND_PER_PRIMITIVE_SET);
         #endif
     }
     else
@@ -572,6 +529,73 @@ void TriStripVisitor::stripify(Geometry& geom)
         OSG_INFO<<"TriStripVisitor::stripify(Geometry&):     not doing tri strip *****************"<< std::endl;
     }
 
+}
+
+
+void TriStripVisitor::mergeTriangleStrips(osg::Geometry::PrimitiveSetList& primitives)
+{
+    int nbtristrip = 0;
+    int nbtristripVertexes = 0;
+
+    for (unsigned int i = 0; i < primitives.size(); ++ i)
+    {
+        osg::PrimitiveSet* ps = primitives[i].get();
+        osg::DrawElements* de = ps->getDrawElements();
+        if (de && de->getMode() == osg::PrimitiveSet::TRIANGLE_STRIP)
+        {
+            ++ nbtristrip;
+            nbtristripVertexes += de->getNumIndices();
+        }
+    }
+
+    if (nbtristrip > 0) {
+        osg::notify(osg::NOTICE) << "found " << nbtristrip << " tristrip, "
+                                 << "total indices " << nbtristripVertexes
+                                 << " should result to " << nbtristripVertexes + nbtristrip * 2
+                                 << " after connection" << std::endl;
+
+        osg::DrawElementsUInt* ndw = new osg::DrawElementsUInt(osg::PrimitiveSet::TRIANGLE_STRIP);
+        for (unsigned int i = 0; i < primitives.size(); ++ i)
+        {
+            osg::PrimitiveSet* ps = primitives[i].get();
+            if (ps && ps->getMode() == osg::PrimitiveSet::TRIANGLE_STRIP)
+            {
+                osg::DrawElements* de = ps->getDrawElements();
+                if (de)
+                {
+                    // if connection needed insert degenerate triangles
+                    if (ndw->getNumIndices() != 0 && ndw->back() != de->getElement(0))
+                    {
+                        // duplicate last vertex
+                        ndw->addElement(ndw->back());
+                        // insert first vertex of next strip
+                        ndw->addElement(de->getElement(0));
+                    }
+
+                    if (ndw->getNumIndices() % 2 != 0 ) {
+                        // add a dummy vertex to reverse the strip
+                        ndw->addElement(de->getElement(0));
+                    }
+
+                    for (unsigned int j = 0; j < de->getNumIndices(); j++) {
+                        ndw->addElement(de->getElement(j));
+                    }
+                }
+            }
+        }
+
+        for (int i = primitives.size() - 1 ; i >= 0 ; -- i)
+        {
+            osg::PrimitiveSet* ps = primitives[i].get();
+            // remove null primitive sets and all primitives that have been merged
+            // (i.e. all TRIANGLE_STRIP DrawElements)
+            if (!ps || (ps && ps->getMode() == osg::PrimitiveSet::TRIANGLE_STRIP))
+            {
+                primitives.erase(primitives.begin() + i);
+            }
+        }
+        primitives.insert(primitives.begin(), ndw);
+    }
 }
 
 void TriStripVisitor::stripify()

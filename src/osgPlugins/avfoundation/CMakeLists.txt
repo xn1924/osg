@@ -1,10 +1,9 @@
-INCLUDE_DIRECTORIES( ${AV_FOUNDATION_INCLUDE_DIR} )
 
-SET(TARGET_SRC 
+SET(TARGET_SRC
     OSXAVFoundationVideo.mm
     OSXAVFoundationVideo.h
     ../QTKit/VideoFrameDispatcher.h
-    ../QTKIt/VideoFrameDispatcher.cpp
+    ../QTKit/VideoFrameDispatcher.cpp
     OSXAVFoundationCoreVideoTexture.h
     OSXAVFoundationCoreVideoTexture.cpp
     ReaderWriterAVFoundation.cpp
@@ -14,4 +13,4 @@ SET(TARGET_LIBRARIES_VARS AV_FOUNDATION_LIBRARY COCOA_LIBRARY COREVIDEO_LIBRARY 
 SET(TARGET_ADDED_LIBRARIES osgViewer )
 
 #### end var setup  ###
-SETUP_PLUGIN(AVFoundation)
+SETUP_PLUGIN(avfoundation)

@@ -71,7 +71,7 @@ struct TriangleIndicesCollector
         const osg::Vec3& v2 = (*(_buildKdTree->_kdTree.getVertices()))[p2];
 
         // discard degenerate points
-        if (v0==v1 || v1==v2 || v1==v2)
+        if (v0==v1 || v1==v2 || v2==v0)
         {
             //OSG_NOTICE<<"Disgarding degenerate triangle"<<std::endl;
             return;
@@ -110,7 +110,7 @@ bool BuildKdTree::build(KdTree::BuildOptions& options, osg::Geometry* geometry)
 
     if (vertices->size() <= options._targetNumTrianglesPerLeaf) return false;
 
-    _bb = geometry->getBound();
+    _bb = geometry->getBoundingBox();
     _kdTree.setVertices(vertices);
 
     unsigned int estimatedSize = (unsigned int)(2.0*float(vertices->size())/float(options._targetNumTrianglesPerLeaf));
@@ -801,24 +801,15 @@ KdTreeBuilder::KdTreeBuilder(const KdTreeBuilder& rhs):
 {
 }
 
-void KdTreeBuilder::apply(osg::Geode& geode)
+void KdTreeBuilder::apply(osg::Geometry& geometry)
 {
-    for(unsigned int i=0; i<geode.getNumDrawables(); ++i)
+    osg::KdTree* previous = dynamic_cast<osg::KdTree*>(geometry.getShape());
+    if (previous) return;
+
+    osg::ref_ptr<osg::KdTree> kdTree = osg::clone(_kdTreePrototype.get());
+
+    if (kdTree->build(_buildOptions, &geometry))
     {
-
-        osg::Geometry* geom = geode.getDrawable(i)->asGeometry();
-        if (geom)
-        {
-            osg::KdTree* previous = dynamic_cast<osg::KdTree*>(geom->getShape());
-            if (previous) continue;
-
-            osg::ref_ptr<osg::Object> obj = _kdTreePrototype->cloneType();
-            osg::ref_ptr<osg::KdTree> kdTree = dynamic_cast<osg::KdTree*>(obj.get());
-
-            if (kdTree->build(_buildOptions, geom))
-            {
-                geom->setShape(kdTree.get());
-            }
-        }
+        geometry.setShape(kdTree.get());
     }
 }

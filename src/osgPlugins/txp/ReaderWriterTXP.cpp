@@ -858,7 +858,7 @@ osg::Node* SeamFinder::seamReplacement(osg::Node* node)
 osg::Node* ReaderWriterTXP::getTileContent(const TXPArchive::TileInfo &info, int x, int y, int lod, TXPArchive* archive,  std::vector<TXPArchive::TileLocationInfo>& childrenLoc)
 {
     if ( archive == 0 )
-        return false;
+        return 0;
 
     int majorVersion, minorVersion;
     archive->GetVersion(majorVersion, minorVersion);
@@ -870,7 +870,9 @@ osg::Node* ReaderWriterTXP::getTileContent(const TXPArchive::TileInfo &info, int
     osg::Group* tileGroup = archive->getTileContent(x,y,lod,realMinRange,realMaxRange,usedMaxRange,tileCenter, childrenLoc);
 
     // if group has only one child, then simply use its child.
-    while (tileGroup->getNumChildren()==1 && tileGroup->getChild(0)->asGroup())
+    // if the node is a transform, then stop processing so as to not loose the transformation
+    while (tileGroup && !tileGroup->asTransform() &&
+           tileGroup->getNumChildren()==1 && tileGroup->getChild(0)->asGroup())
     {
         tileGroup = tileGroup->getChild(0)->asGroup();
     }
@@ -882,7 +884,7 @@ osg::Node* ReaderWriterTXP::getTileContent(const TXPArchive::TileInfo &info, int
         doSeam = (lod < (archive->getNumLODs() - 1));
 
     // Handle seams
-    if (doSeam)
+    if (tileGroup && doSeam)
     {
         SeamFinder sfv(x,y,lod,info,archive);
         tileGroup->accept(sfv);
@@ -895,7 +897,7 @@ osg::Node* ReaderWriterTXP::getTileContent(const TXPArchive::TileInfo &info, int
 osg::Node* ReaderWriterTXP::getTileContent(const TXPArchive::TileInfo &info, const TXPArchive::TileLocationInfo& loc, TXPArchive* archive,  std::vector<TXPArchive::TileLocationInfo>& childrenLoc)
 {
     if ( archive == 0 )
-        return false;
+        return 0;
 
     // int numLods = archive->getNumLODs();
 
@@ -906,13 +908,15 @@ osg::Node* ReaderWriterTXP::getTileContent(const TXPArchive::TileInfo &info, con
     osg::Group* tileGroup = archive->getTileContent(loc,realMinRange,realMaxRange,usedMaxRange,tileCenter, childrenLoc);
 
     // if group has only one child, then simply use its child.
-    while (tileGroup->getNumChildren()==1 && tileGroup->getChild(0)->asGroup())
+    // if the node is a transform, then stop processing so as to not loose the transformation
+    while (tileGroup && !tileGroup->asTransform() &&
+           tileGroup->getNumChildren()==1 && tileGroup->getChild(0)->asGroup())
     {
         tileGroup = tileGroup->getChild(0)->asGroup();
     }
 
     // Handle seams
-    if (childrenLoc.size() > 0)
+    if (tileGroup && childrenLoc.size() > 0)
     {
         SeamFinder sfv(loc.x, loc.y, loc.lod, info, archive);
         tileGroup->accept(sfv);

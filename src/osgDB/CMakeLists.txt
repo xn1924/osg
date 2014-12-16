@@ -7,7 +7,7 @@ IF   (DYNAMIC_OPENSCENEGRAPH)
 
     IF(OSG_PLUGIN_SEARCH_INSTALL_DIR_FOR_PLUGINS)
         # Add a default plugin search path component
-        ADD_DEFINITIONS(-DOSG_DEFAULT_LIBRARY_PATH=${CMAKE_INSTALL_PREFIX}/lib${LIB_POSTFIX}/${OSG_PLUGINS})
+        ADD_DEFINITIONS(-DOSG_DEFAULT_LIBRARY_PATH=\"${CMAKE_INSTALL_PREFIX}/lib${LIB_POSTFIX}/${OSG_PLUGINS}\")
     ENDIF()
 
     # Set the library extension according to what configuration is being built.
@@ -32,13 +32,11 @@ ELSE ()
     ADD_DEFINITIONS(-DOSG_LIBRARY_STATIC)
 ENDIF()
 
-IF (APPLE) 
-   IF(OSG_BUILD_PLATFORM_IPHONE OR OSG_BUILD_PLATFORM_IPHONE_SIMULATOR)
+IF(APPLE AND NOT ANDROID)
      # compile FileUtils.cpp as objective-c++
      SET_SOURCE_FILES_PROPERTIES(FileUtils.cpp
        PROPERTIES COMPILE_FLAGS "-x objective-c++"
      )
-   ENDIF()
 ENDIF()
 
 
@@ -54,6 +52,7 @@ SET(TARGET_H
     ${HEADER_PATH}/Archive
     ${HEADER_PATH}/AuthenticationMap
     ${HEADER_PATH}/Callbacks
+    ${HEADER_PATH}/ClassInterface
     ${HEADER_PATH}/ConvertUTF
     ${HEADER_PATH}/DatabasePager
     ${HEADER_PATH}/DatabaseRevisions
@@ -69,6 +68,7 @@ SET(TARGET_H
     ${HEADER_PATH}/ImagePager
     ${HEADER_PATH}/ImageProcessor
     ${HEADER_PATH}/Input
+    ${HEADER_PATH}/ObjectCache
     ${HEADER_PATH}/Output
     ${HEADER_PATH}/Options
     ${HEADER_PATH}/ParameterOutput
@@ -90,6 +90,7 @@ SET(TARGET_SRC
     Archive.cpp
     AuthenticationMap.cpp
     Callbacks.cpp
+    ClassInterface.cpp
     ConvertUTF.cpp
     DatabasePager.cpp
     DatabaseRevisions.cpp
@@ -107,6 +108,7 @@ SET(TARGET_SRC
     ImagePager.cpp
     Input.cpp
     MimeTypes.cpp
+    ObjectCache.cpp
     Output.cpp
     Options.cpp
     PluginQuery.cpp
@@ -121,12 +123,12 @@ SET(TARGET_SRC
     ${OPENSCENEGRAPH_VERSIONINFO_RC}
 )
 
-IF(APPLE)
+IF(APPLE AND NOT ANDROID)
     IF(NOT OSG_BUILD_PLATFORM_IPHONE AND NOT OSG_BUILD_PLATFORM_IPHONE_SIMULATOR)
         # Needs CoreFoundation calls and a Carbon function
-        SET(OSGDB_PLATFORM_SPECIFIC_LIBRARIES ${CARBON_LIBRARY})
+        SET(OSGDB_PLATFORM_SPECIFIC_LIBRARIES ${CARBON_LIBRARY} ${COCOA_LIBRARY})
     ENDIF()
- 
+
     IF(OSG_DEFAULT_IMAGE_PLUGIN_FOR_OSX STREQUAL "quicktime")
         ADD_DEFINITIONS(-DDARWIN_QUICKTIME)
     ELSE()
@@ -163,7 +165,7 @@ ENDIF()
 
 ADD_DEFINITIONS(-DOSG_PLUGIN_EXTENSION=${CMAKE_SHARED_MODULE_SUFFIX})
 
-SET(TARGET_LIBRARIES     
+SET(TARGET_LIBRARIES
     osg
     osgUtil
     OpenThreads

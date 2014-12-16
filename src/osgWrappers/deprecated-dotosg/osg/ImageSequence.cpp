@@ -42,6 +42,14 @@ bool ImageSequence_readLocalData(Object& obj, Input& fr)
         {
             is.setMode(osg::ImageSequence::PAGE_AND_DISCARD_USED_IMAGES);
         }
+        else if (modeStr=="LOAD_AND_RETAIN_IN_UPDATE_TRAVERSAL")
+        {
+            is.setMode(osg::ImageSequence::LOAD_AND_RETAIN_IN_UPDATE_TRAVERSAL);
+        }
+        else if (modeStr=="LOAD_AND_DISCARD_IN_UPDATE_TRAVERSAL")
+        {
+            is.setMode(osg::ImageSequence::LOAD_AND_DISCARD_IN_UPDATE_TRAVERSAL);
+        }
     }
 
     double length;
@@ -52,6 +60,7 @@ bool ImageSequence_readLocalData(Object& obj, Input& fr)
 
     if (fr.matchSequence("FileNames {"))
     {
+        if (fr.getOptions()) is.setReadOptions(new osgDB::Options(*fr.getOptions()));
         fr += 2;
         iteratorAdvanced = true;
         int entry = fr[0].getNoNestedBrackets();
@@ -103,37 +112,27 @@ bool ImageSequence_writeLocalData(const Object& obj, Output& fw)
         case(osg::ImageSequence::PAGE_AND_DISCARD_USED_IMAGES):
             fw.indent()<<"Mode PAGE_AND_DISCARD_USED_IMAGES"<<std::endl;
             break;
+        case(osg::ImageSequence::LOAD_AND_RETAIN_IN_UPDATE_TRAVERSAL):
+            fw.indent()<<"Mode LOAD_AND_RETAIN_IN_UPDATE_TRAVERSAL"<<std::endl;
+            break;
+        case(osg::ImageSequence::LOAD_AND_DISCARD_IN_UPDATE_TRAVERSAL):
+            fw.indent()<<"Mode LOAD_AND_DISCARD_IN_UPDATE_TRAVERSAL"<<std::endl;
+            break;
     }
 
     fw.indent()<<"Length "<<is.getLength()<<std::endl;
 
-    if (!is.getFileNames().empty())
+    if (is.getNumImageData()>0)
     {
         fw.indent()<<"FileNames {"<<std::endl;
         fw.moveIn();
 
-        const osg::ImageSequence::FileNames& names = is.getFileNames();
-        for(osg::ImageSequence::FileNames::const_iterator itr = names.begin();
-            itr != names.end();
+        const osg::ImageSequence::ImageDataList& id = is.getImageDataList();
+        for(osg::ImageSequence::ImageDataList::const_iterator itr = id.begin();
+            itr != id.end();
             ++itr)
         {
-            fw.indent()<<fw.wrapString(*itr)<<std::endl;
-        }
-
-        fw.moveOut();
-        fw.indent()<<"}"<<std::endl;
-    }
-    else
-    {
-        fw.indent()<<"Images {"<<std::endl;
-        fw.moveIn();
-
-        const osg::ImageSequence::Images& images = is.getImages();
-        for(osg::ImageSequence::Images::const_iterator itr = images.begin();
-            itr != images.end();
-            ++itr)
-        {
-            if (!(*itr)->getFileName().empty()) fw.indent()<<fw.wrapString((*itr)->getFileName())<<std::endl;
+            fw.indent()<<fw.wrapString(itr->_filename)<<std::endl;
         }
 
         fw.moveOut();

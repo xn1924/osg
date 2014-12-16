@@ -88,12 +88,11 @@ void POVWriterNodeVisitor::apply( Geode& node )
    pushStateSet( node.getStateSet() );
 
    // iterate through drawables
-   const Geode::DrawableList& dl = node.getDrawableList();
-   for( Geode::DrawableList::const_iterator itr = dl.begin();
-        itr != dl.end(); ++itr)
+   for(unsigned int i=0; i<node.getNumDrawables(); ++i)
    {
       // get drawable
-      const Drawable *d = itr->get();
+      const Drawable *d = node.getDrawable(i);
+      if (!d) continue;
 
       // push state set
       const StateSet *ss = d->getStateSet();
@@ -526,19 +525,6 @@ void POVWriterNodeVisitor::processGeometry( const Geometry *g,
    // (seen on POV-Ray 3.6.1)
    if( g->getVertexArray() == NULL || g->getVertexArray()->getNumElements() == 0 )
       return;
-
-   if(( g->getVertexIndices() != NULL &&
-        g->getVertexIndices()->getNumElements() != 0 ) ||
-      ( g->getNormalIndices() != NULL &&
-        g->getNormalIndices()->getNumElements() != 0 ) ||
-      ( g->getTexCoordIndices(0) != NULL &&
-        g->getTexCoordIndices(0)->getNumElements() != 0 ))
-   {
-      notify( WARN ) << "POV Writer WARNING: "
-            "Geometry with indices is not " << endl <<
-            "supported yet by POV plugin. Skipping geometry." << endl;
-      return;
-   }
 
    // mesh2
    _fout << "mesh2" << endl;

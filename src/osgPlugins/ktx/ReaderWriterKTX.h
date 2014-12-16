@@ -12,7 +12,7 @@
 */
 
 #include <osgDB/ReaderWriter>
-#include <stdint.h>
+#include <osg/Types>
 
 struct KTXTexHeader
 {

@@ -17,6 +17,7 @@
 #include <dom/domCOLLADA.h>
 #include <dom/domInstanceWithExtra.h>
 #include <dom/domConstants.h>
+#include <osg/ValueObject>
 #include <osg/MatrixTransform>
 #include <osg/PositionAttitudeTransform>
 
@@ -295,7 +296,7 @@ bool daeReader::convert( std::istream& fin )
     std::vector<char> buffer(length);
     fin.read(&buffer[0], length);
 
-    _document = _dae->openFromMemory(fileURI, buffer.data());
+    _document = _dae->openFromMemory(fileURI, &buffer[0]);
 
     return processDocument (fileURI);
 }
@@ -585,7 +586,10 @@ osg::Node* daeReader::processNode( domNode *node, bool skeleton)
     {
         std::string name = "";
         if (node->getId())
+        {
             name = node->getId();
+            resultNode->setUserValue("dae_node_id", name);
+        }
         if (node->getName())
             name = node->getName();
         resultNode->setName( name );

@@ -48,27 +48,23 @@ TextureCubeMap::TextureCubeMap(const TextureCubeMap& text,const CopyOp& copyop):
             _numMipmapLevels(text._numMipmapLevels),
             _subloadCallback(text._subloadCallback)
 {
-    _images[0] = copyop(text._images[0].get());
-    _images[1] = copyop(text._images[1].get());
-    _images[2] = copyop(text._images[2].get());
-    _images[3] = copyop(text._images[3].get());
-    _images[4] = copyop(text._images[4].get());
-    _images[5] = copyop(text._images[5].get());
-
-    _modifiedCount[0].setAllElementsTo(0);
-    _modifiedCount[1].setAllElementsTo(0);
-    _modifiedCount[2].setAllElementsTo(0);
-    _modifiedCount[3].setAllElementsTo(0);
-    _modifiedCount[4].setAllElementsTo(0);
-    _modifiedCount[5].setAllElementsTo(0);
-
+    setImage(0, copyop(text._images[0].get()));
+    setImage(1, copyop(text._images[1].get()));
+    setImage(2, copyop(text._images[2].get()));
+    setImage(3, copyop(text._images[3].get()));
+    setImage(4, copyop(text._images[4].get()));
+    setImage(5, copyop(text._images[5].get()));
 }
-
 
 TextureCubeMap::~TextureCubeMap()
 {
+    setImage(0, NULL);
+    setImage(1, NULL);
+    setImage(2, NULL);
+    setImage(3, NULL);
+    setImage(4, NULL);
+    setImage(5, NULL);
 }
-
 
 int TextureCubeMap::compare(const StateAttribute& sa) const
 {
@@ -126,7 +122,7 @@ int TextureCubeMap::compare(const StateAttribute& sa) const
 }
 
 
-void TextureCubeMap::setImage( unsigned int face, Image* image)
+void TextureCubeMap::setImage(unsigned int face, Image* image)
 {
     if (_images[face] == image) return;
 
@@ -136,9 +132,18 @@ void TextureCubeMap::setImage( unsigned int face, Image* image)
         if (_images[i].valid() && _images[i]->requiresUpdateCall()) ++numImageRequireUpdateBefore;
     }
 
+    if (_images[face].valid())
+    {
+        _images[face]->removeClient(this);
+    }
+
     _images[face] = image;
     _modifiedCount[face].setAllElementsTo(0);
 
+    if (_images[face].valid())
+    {
+        _images[face]->addClient(this);
+    }
 
     // find out if we need to reset the update callback to handle the animation of image
     unsigned numImageRequireUpdateAfter = 0;
@@ -198,9 +203,9 @@ void TextureCubeMap::apply(State& state) const
     ElapsedTime elapsedTime(&(tom->getApplyTime()));
     tom->getNumberApplied()++;
 
-    const Extensions* extensions = getExtensions(contextID,true);
+    const GLExtensions* extensions = state.get<GLExtensions>();
 
-    if (!extensions->isCubeMapSupported())
+    if (!extensions->isCubeMapSupported)
         return;
 
     // get the texture object for the current contextID.
@@ -361,9 +366,9 @@ void TextureCubeMap::apply(State& state) const
 void TextureCubeMap::copyTexSubImageCubeMap(State& state, int face, int xoffset, int yoffset, int x, int y, int width, int height )
 {
     const unsigned int contextID = state.getContextID();
-    const Extensions* extensions = getExtensions(contextID,true);
+    const GLExtensions* extensions = state.get<GLExtensions>();
 
-    if (!extensions->isCubeMapSupported())
+    if (!extensions->isCubeMapSupported)
         return;
 
     if (_internalFormat==0) _internalFormat=GL_RGBA;
@@ -470,42 +475,4 @@ void TextureCubeMap::allocateMipmap(State& state) const
         // inform state that this texture is the current one bound.
         state.haveAppliedTextureAttribute(state.getActiveTextureUnit(), this);
     }
-}
-
-typedef buffered_value< ref_ptr<TextureCubeMap::Extensions> > BufferedExtensions;
-static BufferedExtensions s_extensions;
-
-TextureCubeMap::Extensions* TextureCubeMap::getExtensions(unsigned int contextID,bool createIfNotInitalized)
-{
-    if (!s_extensions[contextID] && createIfNotInitalized) s_extensions[contextID] = new Extensions(contextID);
-    return s_extensions[contextID].get();
-}
-
-void TextureCubeMap::setExtensions(unsigned int contextID,Extensions* extensions)
-{
-    s_extensions[contextID] = extensions;
-}
-
-TextureCubeMap::Extensions::Extensions(unsigned int contextID)
-{
-    setupGLExtensions(contextID);
-}
-
-TextureCubeMap::Extensions::Extensions(const Extensions& rhs):
-    Referenced()
-{
-    _isCubeMapSupported = rhs._isCubeMapSupported;
-}
-
-void TextureCubeMap::Extensions::lowestCommonDenominator(const Extensions& rhs)
-{
-    if (!rhs._isCubeMapSupported) _isCubeMapSupported = false;
-}
-
-void TextureCubeMap::Extensions::setupGLExtensions(unsigned int contextID)
-{
-    _isCubeMapSupported = OSG_GLES2_FEATURES || OSG_GL3_FEATURES ||
-                          isGLExtensionSupported(contextID,"GL_ARB_texture_cube_map") ||
-                          isGLExtensionSupported(contextID,"GL_EXT_texture_cube_map") ||
-                          strncmp((const char*)glGetString(GL_VERSION),"1.3",3)>=0;;
 }

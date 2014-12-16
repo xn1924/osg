@@ -19,8 +19,16 @@
 #include <osg/Vec2>
 #include <osg/Vec3>
 #include <osg/Vec4>
+#include <osg/Vec2i>
+#include <osg/Vec3i>
+#include <osg/Vec4i>
+#include <osg/Vec2ui>
+#include <osg/Vec3ui>
+#include <osg/Vec4ui>
 #include <osg/Quat>
 #include <osg/Matrix>
+#include <osg/BoundingBox>
+#include <osg/BoundingSphere>
 #include <osg/Array>
 #include <osg/PrimitiveSet>
 #include <osgDB/ReaderWriter>
@@ -69,8 +77,10 @@ public:
     InputStream( const osgDB::Options* options );
     virtual ~InputStream();
 
+    void setFileVersion( const std::string& d, int v ) { _domainVersionMap[d] = v; }
+    int getFileVersion( const std::string& d=std::string() ) const;
+
     bool isBinary() const { return _in->isBinary(); }
-    int getFileVersion() const { return _fileVersion; }
     const osgDB::Options* getOptions() const { return _options.get(); }
 
     // Serialization related functions
@@ -97,10 +107,21 @@ public:
     InputStream& operator>>( osg::Vec2b& v );
     InputStream& operator>>( osg::Vec3b& v );
     InputStream& operator>>( osg::Vec4b& v );
+    InputStream& operator>>( osg::Vec2ub& v );
+    InputStream& operator>>( osg::Vec3ub& v );
     InputStream& operator>>( osg::Vec4ub& v );
     InputStream& operator>>( osg::Vec2s& v );
     InputStream& operator>>( osg::Vec3s& v );
     InputStream& operator>>( osg::Vec4s& v );
+    InputStream& operator>>( osg::Vec2us& v );
+    InputStream& operator>>( osg::Vec3us& v );
+    InputStream& operator>>( osg::Vec4us& v );
+    InputStream& operator>>( osg::Vec2i& v );
+    InputStream& operator>>( osg::Vec3i& v );
+    InputStream& operator>>( osg::Vec4i& v );
+    InputStream& operator>>( osg::Vec2ui& v );
+    InputStream& operator>>( osg::Vec3ui& v );
+    InputStream& operator>>( osg::Vec4ui& v );
     InputStream& operator>>( osg::Vec2f& v );
     InputStream& operator>>( osg::Vec3f& v );
     InputStream& operator>>( osg::Vec4f& v );
@@ -111,15 +132,19 @@ public:
     InputStream& operator>>( osg::Plane& p );
     InputStream& operator>>( osg::Matrixf& mat );
     InputStream& operator>>( osg::Matrixd& mat );
+    InputStream& operator>>( osg::BoundingBoxf& bb );
+    InputStream& operator>>( osg::BoundingBoxd& bb );
+    InputStream& operator>>( osg::BoundingSpheref& bs );
+    InputStream& operator>>( osg::BoundingSphered& bs );
 
-    InputStream& operator>>( osg::Array*& a ) { a = readArray(); return *this; }
     InputStream& operator>>( osg::Image*& img ) { img = readImage(); return *this; }
-    InputStream& operator>>( osg::PrimitiveSet*& p ) { p = readPrimitiveSet(); return *this; }
+    InputStream& operator>>( osg::Array*& a ) { if (_fileVersion>=112) a = readObjectOfType<osg::Array>(); else a = readArray(); return *this; }
+    InputStream& operator>>( osg::PrimitiveSet*& p ) { if (_fileVersion>=112) p = readObjectOfType<osg::PrimitiveSet>(); else p = readPrimitiveSet(); return *this; }
     InputStream& operator>>( osg::Object*& obj ) { obj = readObject(); return *this; }
 
-    InputStream& operator>>( osg::ref_ptr<osg::Array>& ptr ) { ptr = readArray(); return *this; }
     InputStream& operator>>( osg::ref_ptr<osg::Image>& ptr ) { ptr = readImage(); return *this; }
-    InputStream& operator>>( osg::ref_ptr<osg::PrimitiveSet>& ptr ) { ptr = readPrimitiveSet(); return *this; }
+    InputStream& operator>>( osg::ref_ptr<osg::Array>& ptr ) { if (_fileVersion>=112) ptr = readObjectOfType<osg::Array>(); else ptr = readArray(); return *this; }
+    InputStream& operator>>( osg::ref_ptr<osg::PrimitiveSet>& ptr ) { if (_fileVersion>=112) ptr = readObjectOfType<osg::PrimitiveSet>(); else ptr = readPrimitiveSet(); return *this; }
 
     template<typename T> InputStream& operator>>( osg::ref_ptr<T>& ptr )
     { ptr = static_cast<T*>(readObject()); return *this; }
@@ -138,7 +163,19 @@ public:
     osg::Array* readArray();
     osg::PrimitiveSet* readPrimitiveSet();
     osg::Image* readImage(bool readFromExternal=true);
+
+    template<typename T>
+    T* readObjectOfType()
+    {
+        osg::ref_ptr<osg::Object> obj = readObject();
+        T* ptr = dynamic_cast<T*>(obj.get());
+        if (ptr) { obj.release(); return ptr; }
+        else return 0;
+    }
+
     osg::Object* readObject( osg::Object* existingObj=0 );
+
+
     osg::Object* readObjectFields( const std::string& className, unsigned int id, osg::Object* existingObj=0);
 
     /// set an input iterator, used directly when not using InputStream with a traditional file releated stream.
@@ -172,6 +209,8 @@ protected:
     ArrayMap _arrayMap;
     IdentifierMap _identifierMap;
 
+    typedef std::map<std::string, int> VersionMap;
+    VersionMap _domainVersionMap;
     int _fileVersion;
     bool _useSchemaData;
     bool _forceReadingImage;
@@ -179,6 +218,9 @@ protected:
     osg::ref_ptr<InputIterator> _in;
     osg::ref_ptr<InputException> _exception;
     osg::ref_ptr<const osgDB::Options> _options;
+
+    // object to used to read field properties that will be discarded.
+    osg::ref_ptr<osg::Object> _dummyReadObject;
 
     // store here to avoid a new and a leak in InputStream::decompress
     std::stringstream* _dataDecompress;

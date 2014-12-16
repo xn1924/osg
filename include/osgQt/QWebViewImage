@@ -17,7 +17,12 @@
 // make sure this header isn't built as par of osgQt, leaving it to applications to build
 #if !defined(OSGQT_LIBRARY) && !defined(OSG_LIBRARY_STATIC)
 
-#include <QtWebKit/QtWebKit>
+#if QT_VERSION >= 0x050000
+# include <QtWebKitWidgets>
+#else
+# include <QtWebKit>
+#endif
+
 
 #include <osgWidget/Browser>
 #include <osgQt/QGraphicsViewAdapter>
@@ -61,9 +66,12 @@ class QWebViewImage : public osgWidget::BrowserImage
 
         void render()
         {
-            _adapter->render();
+            if (_adapter->requiresRendering()) _adapter->render();
         }
 
+        virtual bool requiresUpdateCall() const { return true; }
+        virtual void update( osg::NodeVisitor* nv ) { render(); }
+        
         virtual bool sendFocusHint(bool focus)
         {
             QFocusEvent event(focus ? QEvent::FocusIn : QEvent::FocusOut, Qt::OtherFocusReason);

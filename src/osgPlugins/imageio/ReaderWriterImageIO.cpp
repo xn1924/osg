@@ -18,13 +18,23 @@
 // probably especially important for istream which lacks extension information.
 // Is there information we can use in the OSG options parameter?
 
-// For ImageIO framework and also LaunchServices framework (for UTIs)
-#include <ApplicationServices/ApplicationServices.h>
+
+#import "TargetConditionals.h"
+#if (TARGET_OS_IPHONE)
+    #import <UIKit/UIKit.h>
+    #import <ImageIO/ImageIO.h>
+    #import <CoreGraphics/CoreGraphics.h>
+    #import <Foundation/Foundation.h>
+    #import <MobileCoreServices/MobileCoreServices.h>
+#else
+    #include <ApplicationServices/ApplicationServices.h>
+#endif
 // For the vImage framework (part of the Accerlate framework)
 #include <Accelerate/Accelerate.h>
 
 // Used because CGDataProviderCreate became deprecated in 10.5
 #include <AvailabilityMacros.h>
+
 
 #include <osg/GL>
 #include <osg/Notify>
@@ -244,7 +254,7 @@ osg::Image* CreateOSGImageFromCGImage(CGImageRef image_ref)
 {
     /* This code is adapted from Apple's Documentation found here:
      * http://developer.apple.com/documentation/GraphicsImaging/Conceptual/OpenGL-MacProgGuide/index.html
-     * Listing 9-4††Using a Quartz image as a texture source.
+     * Listing 9-4Using a Quartz image as a texture source.
      * Unfortunately, this guide doesn't show what to do about
      * non-RGBA image formats so I'm making the rest up
      * (and it's probably all wrong).
@@ -252,7 +262,7 @@ osg::Image* CreateOSGImageFromCGImage(CGImageRef image_ref)
 
     size_t the_width = CGImageGetWidth(image_ref);
     size_t the_height = CGImageGetHeight(image_ref);
-    CGRect the_rect = {{0, 0}, {the_width, the_height}};
+    CGRect the_rect = {{0.0f, 0.0f}, {static_cast<CGFloat>(the_width), static_cast<CGFloat>(the_height)}};
 
     size_t bits_per_pixel = CGImageGetBitsPerPixel(image_ref);
     size_t bytes_per_row = CGImageGetBytesPerRow(image_ref);
@@ -336,6 +346,8 @@ osg::Image* CreateOSGImageFromCGImage(CGImageRef image_ref)
         //
         case 16:
         case 32:
+        case 48:
+        case 64:
         {
 
             internal_format = GL_RGBA8;
@@ -363,6 +375,7 @@ osg::Image* CreateOSGImageFromCGImage(CGImageRef image_ref)
 
     }
 
+
     // Sets up a context to be drawn to with image_data as the area to be drawn to
     CGContextRef bitmap_context = CGBitmapContextCreate(
         image_data,
@@ -374,47 +387,25 @@ osg::Image* CreateOSGImageFromCGImage(CGImageRef image_ref)
         bitmap_info
     );
 
+    CGContextTranslateCTM(bitmap_context, 0, the_height);
+    CGContextScaleCTM(bitmap_context, 1.0, -1.0);
     // Draws the image into the context's image_data
     CGContextDrawImage(bitmap_context, the_rect, image_ref);
 
     CGContextRelease(bitmap_context);
 
-    //
-    // Reverse the premultiplied alpha for avoiding unexpected darker edges
-    // by Tatsuhiro Nishioka (based on SDL's workaround on the similar issue)
-    // http://bugzilla.libsdl.org/show_bug.cgi?id=868
-    //
-    if (bits_per_pixel > 8 && (bitmap_info & kCGBitmapAlphaInfoMask) == kCGImageAlphaPremultipliedFirst) {
-        int i, j;
-        GLubyte *pixels = (GLubyte *)image_data;
-        for (i = the_height * the_width; i--; ) {
+    if (!image_data)
+        return NULL;
 
-#if __BIG_ENDIAN__
-            // That value is a temporary one and only needed for endianess conversion
-            GLuint *value = (GLuint *)pixels;
-            //
-            // swap endian of each pixel for avoiding weird colors on ppc macs
-            // by Tatsuhiro Nishioka
-            // FIXME: I've tried many combinations of pixel_format, internal_format, and data_type
-            // but none worked well. Therefore I tried endian swapping, which seems working with gif,png,tiff,tga,and psd.
-            // (for grayscaled tga and non-power-of-two tga, I can't guarantee since test images (made with Gimp)
-            // get corrupted on Preview.app ...
-            *value = ((*value) >> 24) | (((*value) << 8) & 0x00FF0000) | (((*value) >> 8) & 0x0000FF00) | ((*value) << 24);
-#endif
-            GLubyte alpha = pixels[3];
-            if (alpha) {
-                for (j = 0; j < 3; ++j) {
-                    pixels[j] = (pixels[j] * 255) / alpha;
-                }
-            }
-            pixels += 4;
-        }
-    }
+    // alpha is premultiplied with rgba, undo it
 
-    //
-    // Workaround for ignored alpha channel
-    // by Tatsuhiro Nishioka
-    // FIXME: specifying GL_UNSIGNED_INT_8_8_8_8_REV or GL_UNSIGNED_INT_8_8_8_8 ignores the alpha channel.
+    vImage_Buffer vb;
+    vb.data = image_data;
+    vb.height = the_height;
+    vb.width = the_width;
+    vb.rowBytes = the_width * 4;
+    vImageUnpremultiplyData_RGBA8888(&vb, &vb, 0);
+
     // changing it to GL_UNSIGNED_BYTE seems working, but I'm not sure if this is a right way.
     //
     data_type = GL_UNSIGNED_BYTE;
@@ -431,7 +422,6 @@ osg::Image* CreateOSGImageFromCGImage(CGImageRef image_ref)
         osg::Image::USE_MALLOC_FREE // Assumption: osg_image takes ownership of image_data and will free
     );
 
-    osg_image->flipVertical();
     return osg_image;
 
 
@@ -1171,6 +1161,8 @@ public:
         osg::Image* osg_image = CreateOSGImageFromCGImage(cg_image_ref);
 
         CFRelease(cg_image_ref);
+        if (!osg_image)
+            return ReadResult::INSUFFICIENT_MEMORY_TO_LOAD;
 
         return osg_image;
     }
@@ -1301,6 +1293,16 @@ public:
         if(!fout) return WriteResult::ERROR_IN_WRITING_FILE;
         return writeImage(osg_image, fout, the_options);
 #endif
+    }
+
+    virtual ReadResult readObject(std::istream& fin,const osgDB::ReaderWriter::Options* options =NULL) const
+    {
+        return readImage(fin, options);
+    }
+
+    virtual ReadResult readObject(const std::string& file, const osgDB::ReaderWriter::Options* options =NULL) const
+    {
+        return readImage(file, options);
     }
 
 };

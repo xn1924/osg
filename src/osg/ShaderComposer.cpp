@@ -37,6 +37,12 @@ ShaderComposer::~ShaderComposer()
     OSG_INFO<<"ShaderComposer::~ShaderComposer() "<<this<<std::endl;
 }
 
+void ShaderComposer::releaseGLObjects(osg::State* state)
+{
+    _programMap.clear();
+    _shaderMainMap.clear();
+}
+
 osg::Program* ShaderComposer::getOrCreateProgram(const ShaderComponents& shaderComponents)
 {
     ProgramMap::iterator itr = _programMap.find(shaderComponents);
@@ -52,6 +58,7 @@ osg::Program* ShaderComposer::getOrCreateProgram(const ShaderComponents& shaderC
     Shaders tessEvaluationShaders;
     Shaders geometryShaders;
     Shaders fragmentShaders;
+    Shaders computeShaders;
 
     OSG_NOTICE<<"ShaderComposer::getOrCreateProgram(shaderComponents.size()=="<<shaderComponents.size()<<std::endl;
 
@@ -81,6 +88,9 @@ osg::Program* ShaderComposer::getOrCreateProgram(const ShaderComponents& shaderC
                 case(Shader::FRAGMENT):
                     fragmentShaders.push_back(shader);
                     break;
+                case(Shader::COMPUTE):
+                    computeShaders.push_back(shader);
+                    break;
                 case(Shader::UNDEFINED):
                     OSG_WARN<<"Warning: ShaderCompose::getOrCreateProgam(ShaderComponts) encounterd invalid Shader::Type."<<std::endl;
                     break;
@@ -103,6 +113,11 @@ osg::Program* ShaderComposer::getOrCreateProgram(const ShaderComponents& shaderC
     if (!fragmentShaders.empty())
     {
         addShaderToProgram(program.get(), fragmentShaders);
+    }
+
+    if (!computeShaders.empty())
+    {
+        addShaderToProgram(program.get(), computeShaders);
     }
 
     // assign newly created program to map.

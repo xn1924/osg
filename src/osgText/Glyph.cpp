@@ -54,7 +54,7 @@ int GlyphTexture::compare(const osg::StateAttribute& rhs) const
 
 bool GlyphTexture::getSpaceForGlyph(Glyph* glyph, int& posX, int& posY)
 {
-    int maxAxis = std::max(glyph->s(), glyph->t());
+    int maxAxis = osg::maximum(glyph->s(), glyph->t());
     int margin = _margin + (int)((float)maxAxis * _marginRatio);
 
     int width = glyph->s()+2*margin;
@@ -147,8 +147,8 @@ void GlyphTexture::apply(osg::State& state) const
     }
 
 
-    const Extensions* extensions = getExtensions(contextID,true);
-    bool generateMipMapSupported = extensions->isGenerateMipMapSupported();
+    const osg::GLExtensions* extensions = state.get<osg::GLExtensions>();
+    bool generateMipMapSupported = extensions->isGenerateMipMapSupported;
 
     // get the texture object for the current contextID.
     TextureObject* textureObject = getTextureObject(contextID);
@@ -221,6 +221,11 @@ void GlyphTexture::apply(osg::State& state) const
             imageData[i] = 0;
         }
 
+        glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+
+        #if !defined(OSG_GLES1_AVAILABLE) && !defined(OSG_GLES2_AVAILABLE)
+        glPixelStorei(GL_UNPACK_ROW_LENGTH,getTextureWidth());
+        #endif
 
         // allocate the texture memory.
         glTexImage2D( GL_TEXTURE_2D, 0, GL_ALPHA,
@@ -366,6 +371,12 @@ void GlyphTexture::apply(osg::State& state) const
 
             // clear the list since we have now subloaded them.
             glyphsWereSubloading.clear();
+
+            glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+
+            #if !defined(OSG_GLES1_AVAILABLE) && !defined(OSG_GLES2_AVAILABLE)
+            glPixelStorei(GL_UNPACK_ROW_LENGTH,getTextureWidth());
+            #endif
 
             // Subload the image once
             glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0,
@@ -528,7 +539,7 @@ void Glyph::subload() const
                                  "\t                "<<s()<<" ,"<<t()<<std::endl<<hex<<
                                  "\t                0x"<<(GLenum)getPixelFormat()<<std::endl<<
                                  "\t                0x"<<(GLenum)getDataType()<<std::endl<<
-                                 "\t                0x"<<(unsigned long)data()<<");"<<dec<<std::endl;
+                                 "\t                "<<static_cast<const void*>(data())<<");"<<dec<<std::endl;
     }
 }
 

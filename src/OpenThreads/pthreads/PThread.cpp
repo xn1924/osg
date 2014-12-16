@@ -1,13 +1,13 @@
 /* -*-c++-*- OpenThreads library, Copyright (C) 2002 - 2007  The Open Thread Group
  *
- * This library is open source and may be redistributed and/or modified under  
- * the terms of the OpenSceneGraph Public License (OSGPL) version 0.0 or 
+ * This library is open source and may be redistributed and/or modified under
+ * the terms of the OpenSceneGraph Public License (OSGPL) version 0.0 or
  * (at your option) any later version.  The full license is in LICENSE file
  * included with this distribution, and on the openscenegraph.org website.
- * 
+ *
  * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the 
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * OpenSceneGraph Public License for more details.
 */
 
@@ -23,7 +23,7 @@
 #include <pthread.h>
 #include <limits.h>
 
-#if defined __linux || defined __sun || defined __APPLE__ || ANDROID
+#if defined __linux__ || defined __sun || defined __APPLE__ || ANDROID
 #include <string.h>
 #include <sys/time.h>
 #include <sys/resource.h>
@@ -46,7 +46,7 @@
     #include <sys/sysctl.h>
 #endif
 
-#if defined(ANDROID)
+#if defined(__ANDROID__)
     #ifndef PAGE_SIZE
         #define PAGE_SIZE 0x400
     #endif
@@ -83,7 +83,7 @@ struct ThreadCleanupStruct
 {
 
     OpenThreads::Thread *thread;
-    volatile bool *runflag;
+    Atomic *runflag;
 
 };
 
@@ -97,7 +97,7 @@ void thread_cleanup_handler(void *arg)
     ThreadCleanupStruct *tcs = static_cast<ThreadCleanupStruct *>(arg);
 
     tcs->thread->cancelCleanup();
-    *(tcs->runflag) = false;
+    (*(tcs->runflag)).exchange(0);
 
 }
 
@@ -149,11 +149,34 @@ private:
 #endif
 #endif
         }
+#if defined(HAVE_PTHREAD_SETAFFINITY_NP) || defined(HAVE_THREE_PARAM_SCHED_SETAFFINITY) || defined(HAVE_TWO_PARAM_SCHED_SETAFFINITY)
+        else
+        {
+            // BUG-fix for linux:
+            // Each thread inherits the processor affinity mask from its parent thread.
+            // We need to explicitly set it to all CPUs, if no affinity was specified.
 
+            cpu_set_t cpumask;
+            CPU_ZERO( &cpumask );
+
+            for (int i = 0; i < OpenThreads::GetNumberOfProcessors(); ++i)
+            {
+                CPU_SET( i, &cpumask );
+            }
+
+#if defined(HAVE_PTHREAD_SETAFFINITY_NP)
+            pthread_setaffinity_np( pthread_self(), sizeof(cpumask), &cpumask);
+#elif defined(HAVE_THREE_PARAM_SCHED_SETAFFINITY)
+            sched_setaffinity( 0, sizeof(cpumask), &cpumask );
+#elif defined(HAVE_TWO_PARAM_SCHED_SETAFFINITY)
+            sched_setaffinity( 0, &cpumask );
+#endif
+        }
+#endif
 
         ThreadCleanupStruct tcs;
         tcs.thread = thread;
-        tcs.runflag = &pd->isRunning;
+        tcs.runflag = &pd->_isRunning;
 
         // Set local storage so that Thread::CurrentThread() can return the right thing
         int status = pthread_setspecific(PThreadPrivateData::s_tls_key, thread);
@@ -173,14 +196,14 @@ private:
 
 #endif // ] ALLOW_PRIORITY_SCHEDULING
 
-        pd->isRunning = true;
+        pd->setRunning(true);
 
         // release the thread that created this thread.
         pd->threadStartedBlock.release();
 
         thread->run();
 
-        pd->isRunning = false;
+        pd->setRunning(false);
 
         pthread_cleanup_pop(0);
 
@@ -403,7 +426,7 @@ Thread::Thread()
     pd->stackSize = 0;
     pd->stackSizeLocked = false;
     pd->idSet = false;
-    pd->isRunning = false;
+    pd->setRunning(false);
     pd->isCanceled = false;
     pd->uniqueId = pd->nextId;
     pd->nextId++;
@@ -425,7 +448,7 @@ Thread::~Thread()
 {
     PThreadPrivateData *pd = static_cast<PThreadPrivateData *>(_prvData);
 
-    if(pd->isRunning)
+    if(pd->isRunning())
     {
         std::cout<<"Error: Thread "<<this<<" still running in destructor"<<std::endl;
 
@@ -433,10 +456,14 @@ Thread::~Thread()
         // Kill the thread when it is destructed
         //
         cancel();
+
+        // wait till the thread is stopped before finishing.
+        join();
+
     }
 
     delete pd;
-    
+
     _prvData = 0;
 }
 
@@ -550,7 +577,7 @@ int Thread::setProcessorAffinity(unsigned int cpunum)
     PThreadPrivateData *pd = static_cast<PThreadPrivateData *> (_prvData);
     pd->cpunum = cpunum;
     if (pd->cpunum<0) return -1;
-    
+
 #ifdef __sgi
 
     int status;
@@ -567,7 +594,7 @@ int Thread::setProcessorAffinity(unsigned int cpunum)
 
 #elif defined(HAVE_PTHREAD_SETAFFINITY_NP) || defined(HAVE_THREE_PARAM_SCHED_SETAFFINITY) || defined(HAVE_TWO_PARAM_SCHED_SETAFFINITY)
 
-    if (pd->isRunning && Thread::CurrentThread()==this)
+    if (pd->isRunning() && Thread::CurrentThread()==this)
     {
         cpu_set_t cpumask;
         CPU_ZERO( &cpumask );
@@ -597,7 +624,7 @@ int Thread::setProcessorAffinity(unsigned int cpunum)
 bool Thread::isRunning()
 {
     PThreadPrivateData *pd = static_cast<PThreadPrivateData *> (_prvData);
-    return pd->isRunning;
+    return pd->isRunning();
 
 }
 
@@ -692,7 +719,7 @@ int Thread::start() {
 //
 int Thread::startThread()
 {
-    if (_prvData) return start(); 
+    if (_prvData) return start();
     else return 0;
 }
 
@@ -756,7 +783,7 @@ int Thread::cancel()
 {
 #if defined(HAVE_PTHREAD_CANCEL)
     PThreadPrivateData *pd = static_cast<PThreadPrivateData *> (_prvData);
-    if (pd->isRunning)
+    if (pd->isRunning())
     {
         pd->isCanceled = true;
         int status = pthread_cancel(pd->tid);
@@ -969,7 +996,7 @@ int Thread::YieldCurrentThread()
 //
 int Thread::microSleep(unsigned int microsec)
 {
-#if !defined(ANDROID)
+#if !defined(__ANDROID__)
     return ::usleep(microsec);
 #else
     ::usleep(microsec);
@@ -1009,7 +1036,7 @@ int OpenThreads::GetNumberOfProcessors()
    uint64_t num_cpus = 0;
    size_t num_cpus_length = sizeof(num_cpus);
 #if defined(__FreeBSD__)
-   sysctlbyname("hw.ncpu", &num_cpus, &num_cpus_length, NULL, 0);            
+   sysctlbyname("hw.ncpu", &num_cpus, &num_cpus_length, NULL, 0);
 #else
    sysctlbyname("hw.activecpu", &num_cpus, &num_cpus_length, NULL, 0);
 #endif
@@ -1024,7 +1051,7 @@ int OpenThreads::SetProcessorAffinityOfCurrentThread(unsigned int cpunum)
     Thread::Init();
 
     Thread* thread = Thread::CurrentThread();
-    if (thread) 
+    if (thread)
     {
         return thread->setProcessorAffinity(cpunum);
     }
@@ -1046,6 +1073,6 @@ int OpenThreads::SetProcessorAffinityOfCurrentThread(unsigned int cpunum)
 #endif
 #endif
     }
-    
+
     return -1;
 }

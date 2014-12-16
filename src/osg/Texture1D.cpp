@@ -34,15 +34,16 @@ Texture1D::Texture1D(osg::Image* image):
 
 Texture1D::Texture1D(const Texture1D& text,const CopyOp& copyop):
             Texture(text,copyop),
-            _image(copyop(text._image.get())),
             _textureWidth(text._textureWidth),
             _numMipmapLevels(text._numMipmapLevels),
             _subloadCallback(text._subloadCallback)
 {
+    setImage(copyop(text._image.get()));
 }
 
 Texture1D::~Texture1D()
 {
+    setImage(NULL);
 }
 
 int Texture1D::compare(const StateAttribute& sa) const
@@ -96,10 +97,15 @@ void Texture1D::setImage(Image* image)
 {
     if (_image == image) return;
 
-    if (_image.valid() && _image->requiresUpdateCall())
+    if (_image.valid())
     {
-        setUpdateCallback(0);
-        setDataVariance(osg::Object::STATIC);
+        _image->removeClient(this);
+
+        if (_image->requiresUpdateCall())
+        {
+            setUpdateCallback(0);
+            setDataVariance(osg::Object::STATIC);
+        }
     }
 
     // delete old texture objects.
@@ -108,10 +114,15 @@ void Texture1D::setImage(Image* image)
     _image = image;
     _modifiedCount.setAllElementsTo(0);
 
-    if (_image.valid() && _image->requiresUpdateCall())
+    if (_image.valid())
     {
-        setUpdateCallback(new Image::UpdateCallback());
-        setDataVariance(osg::Object::DYNAMIC);
+        _image->addClient(this);
+
+        if (_image->requiresUpdateCall())
+        {
+            setUpdateCallback(new Image::UpdateCallback());
+            setDataVariance(osg::Object::DYNAMIC);
+        }
     }
 }
 
@@ -266,11 +277,8 @@ void Texture1D::applyTexImage1D(GLenum target, Image* image, State& state, GLsiz
     if (!image || !image->data())
         return;
 
-    // get the contextID (user defined ID of 0 upwards) for the
-    // current OpenGL context.
-    const unsigned int contextID = state.getContextID();
-    const Extensions* extensions = getExtensions(contextID,true);
-
+    // get extension object
+    const GLExtensions* extensions = state.get<GLExtensions>();
 
     // compute the internal texture format, this set the _internalFormat to an appropriate value.
     computeInternalFormat();
@@ -279,10 +287,10 @@ void Texture1D::applyTexImage1D(GLenum target, Image* image, State& state, GLsiz
     bool compressed = isCompressedInternalFormat(_internalFormat);
 
     //Rescale if resize hint is set or NPOT not supported or dimension exceeds max size
-    if( _resizeNonPowerOfTwoHint || !extensions->isNonPowerOfTwoTextureSupported(_min_filter) || inwidth > extensions->maxTextureSize() )
+    if( _resizeNonPowerOfTwoHint || !extensions->isNonPowerOfTwoTextureSupported(_min_filter) || inwidth > extensions->maxTextureSize )
     {
         // this is not thread safe... should really create local image data and rescale to that as per Texture2D.
-        image->ensureValidSizeForTexturing(extensions->maxTextureSize());
+        image->ensureValidSizeForTexturing(extensions->maxTextureSize);
     }
 
     glPixelStorei(GL_UNPACK_ALIGNMENT,image->getPacking());

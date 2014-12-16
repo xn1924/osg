@@ -51,7 +51,7 @@ void EventQueue::appendEvents(Events& events)
     _eventQueue.insert(_eventQueue.end(), events.begin(), events.end());
 }
 
-void EventQueue::addEvent(GUIEventAdapter* event)
+void EventQueue::addEvent(Event* event)
 {
     OpenThreads::ScopedLock<OpenThreads::Mutex> lock(_eventQueueMutex);
     _eventQueue.push_back(event);
@@ -132,6 +132,11 @@ bool EventQueue::copyEvents(Events& events) const
     }
 }
 
+void EventQueue::syncWindowRectangleWithGraphcisContext()
+{
+    const osg::GraphicsContext::Traits* traits = (getGraphicsContext()!=0) ? getGraphicsContext()->getTraits() : 0;
+    if (traits) _accumulateEventState->setWindowRectangle(traits->x, traits->y, traits->width, traits->height, !_useFixedMouseInputRange);
+}
 
 void EventQueue::windowResize(int x, int y, int width, int height, double time)
 {
@@ -409,7 +414,7 @@ GUIEventAdapter*  EventQueue::touchBegan(unsigned int id, GUIEventAdapter::Touch
     {
         // emulate left mouse button press
 
-        _accumulateEventState->setButtonMask((1) | _accumulateEventState->getButtonMask());
+        _accumulateEventState->setButtonMask(GUIEventAdapter::LEFT_MOUSE_BUTTON | _accumulateEventState->getButtonMask());
         _accumulateEventState->setX(x);
         _accumulateEventState->setY(y);
     }
@@ -418,6 +423,8 @@ GUIEventAdapter*  EventQueue::touchBegan(unsigned int id, GUIEventAdapter::Touch
     event->setEventType(GUIEventAdapter::PUSH);
     event->setTime(time);
     event->addTouchPoint(id, phase, x, y, 0);
+    if(_firstTouchEmulatesMouse)
+        event->setButton(GUIEventAdapter::LEFT_MOUSE_BUTTON);
 
     addEvent(event);
 
@@ -446,7 +453,7 @@ GUIEventAdapter*  EventQueue::touchEnded(unsigned int id, GUIEventAdapter::Touch
 {
     if (_firstTouchEmulatesMouse)
     {
-        _accumulateEventState->setButtonMask(~(1) & _accumulateEventState->getButtonMask());
+        _accumulateEventState->setButtonMask(~GUIEventAdapter::LEFT_MOUSE_BUTTON & _accumulateEventState->getButtonMask());
         _accumulateEventState->setX(x);
         _accumulateEventState->setY(y);
     }
@@ -455,6 +462,9 @@ GUIEventAdapter*  EventQueue::touchEnded(unsigned int id, GUIEventAdapter::Touch
     event->setEventType(GUIEventAdapter::RELEASE);
     event->setTime(time);
     event->addTouchPoint(id, phase, x, y, tap_count);
+    if(_firstTouchEmulatesMouse)
+        event->setButton(GUIEventAdapter::LEFT_MOUSE_BUTTON);
+
     addEvent(event);
 
     return event;
@@ -485,6 +495,8 @@ void EventQueue::frame(double time)
     GUIEventAdapter* event = new GUIEventAdapter(*_accumulateEventState);
     event->setEventType(GUIEventAdapter::FRAME);
     event->setTime(time);
+
+    // OSG_NOTICE<<"frame("<<time<<"), event->getX()="<<event->getX()<<", event->getY()="<<event->getY()<<", event->getXmin()="<<event->getXmin()<<", event->getYmin()="<<event->getYmin()<<", event->getXmax()="<<event->getXmax()<<", event->getYmax()="<<event->getYmax()<<std::endl;
 
     addEvent(event);
 }

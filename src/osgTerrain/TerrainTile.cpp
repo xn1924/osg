@@ -80,7 +80,7 @@ TerrainTile::TerrainTile(const TerrainTile& terrain,const osg::CopyOp& copyop):
 {
     if (terrain.getTerrainTechnique())
     {
-        setTerrainTechnique(dynamic_cast<TerrainTechnique*>(terrain.getTerrainTechnique()->cloneType()));
+        setTerrainTechnique(dynamic_cast<TerrainTechnique*>(terrain.getTerrainTechnique()->clone(osg::CopyOp::SHALLOW_COPY)));
     }
 }
 
@@ -218,7 +218,7 @@ void TerrainTile::setDirtyMask(int dirtyMask)
 
     if (_dirtyMask!=NOT_DIRTY) dirtyDelta += 1;
 
-#if 1
+#if 0
     if (dirtyDelta>0)
     {
         // need to signal that we need an update

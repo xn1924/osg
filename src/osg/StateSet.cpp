@@ -24,8 +24,8 @@
 #include <osg/Material>
 #include <osg/BlendFunc>
 #include <osg/Depth>
-#include <osg/Drawable>
 #include <osg/Node>
+#include <osg/NodeVisitor>
 
 #include <osg/TexGen>
 #include <osg/Texture1D>
@@ -54,6 +54,7 @@ class TextureGLModeSet
             _textureModeSet.insert(GL_TEXTURE_CUBE_MAP);
             _textureModeSet.insert(GL_TEXTURE_RECTANGLE_NV);
             _textureModeSet.insert(GL_TEXTURE_2D_ARRAY_EXT);
+            _textureModeSet.insert(GL_TEXTURE_2D_MULTISAMPLE);
 
             _textureModeSet.insert(GL_TEXTURE_GEN_Q);
             _textureModeSet.insert(GL_TEXTURE_GEN_R);
@@ -81,6 +82,26 @@ static TextureGLModeSet& getTextureGLModeSet()
 bool osg::isTextureMode(StateAttribute::GLMode mode)
 {
     return getTextureGLModeSet().isTextureMode(mode);
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// StateAttributeCallback
+//
+bool StateSet::Callback::run(osg::Object* object, osg::Object* data)
+{
+    osg::StateSet* ss = dynamic_cast<osg::StateSet*>(object);
+    osg::NodeVisitor* nv = dynamic_cast<osg::NodeVisitor*>(data);
+    if (ss && nv)
+    {
+        operator()(ss, nv);
+        return true;
+    }
+    else
+    {
+        return traverse(object, data);
+    }
 }
 
 StateSet::StateSet():
@@ -252,19 +273,19 @@ void StateSet::computeDataVariance()
 }
 
 
-void StateSet::addParent(osg::Object* object)
+void StateSet::addParent(osg::Node* node)
 {
     // OSG_DEBUG_FP<<"Adding parent"<<std::endl;
     OpenThreads::ScopedPointerLock<OpenThreads::Mutex> lock(getRefMutex());
 
-    _parents.push_back(object);
+    _parents.push_back(node);
 }
 
-void StateSet::removeParent(osg::Object* object)
+void StateSet::removeParent(osg::Node* node)
 {
     OpenThreads::ScopedPointerLock<OpenThreads::Mutex> lock(getRefMutex());
 
-    ParentList::iterator pitr = std::find(_parents.begin(),_parents.end(),object);
+    ParentList::iterator pitr = std::find(_parents.begin(),_parents.end(),node);
     if (pitr!=_parents.end()) _parents.erase(pitr);
 }
 
@@ -273,6 +294,32 @@ int StateSet::compare(const StateSet& rhs,bool compareAttributeContents) const
 
     if (_textureAttributeList.size()<rhs._textureAttributeList.size()) return -1;
     if (_textureAttributeList.size()>rhs._textureAttributeList.size()) return 1;
+
+    if (_textureModeList.size()<rhs._textureModeList.size()) return -1;
+    if (_textureModeList.size()>rhs._textureModeList.size()) return 1;
+
+    if (_attributeList.size()<rhs._attributeList.size()) return -1;
+    if (_attributeList.size()>rhs._attributeList.size()) return 1;
+
+    if (_modeList.size()<rhs._modeList.size()) return -1;
+    if (_modeList.size()>rhs._modeList.size()) return 1;
+
+    if (_uniformList.size()<rhs._uniformList.size()) return -1;
+    if (_uniformList.size()>rhs._uniformList.size()) return 1;
+
+     // check render bin details
+
+    if ( _binMode < rhs._binMode ) return -1;
+    else if ( _binMode > rhs._binMode ) return 1;
+
+    if ( _binMode != INHERIT_RENDERBIN_DETAILS )
+    {
+        if ( _binNum < rhs._binNum ) return -1;
+        else if ( _binNum > rhs._binNum ) return 1;
+
+        if ( _binName < rhs._binName ) return -1;
+        else if ( _binName > rhs._binName ) return 1;
+    }
 
     for(unsigned int ai=0;ai<_textureAttributeList.size();++ai)
     {
@@ -373,10 +420,6 @@ int StateSet::compare(const StateSet& rhs,bool compareAttributeContents) const
 
     // we've got here so attributes must be equal...
 
-
-    if (_textureModeList.size()<rhs._textureModeList.size()) return -1;
-    if (_textureModeList.size()>rhs._textureModeList.size()) return 1;
-
     // check to see how the modes compare.
     // first check the rest of the texture modes
     for(unsigned int ti=0;ti<_textureModeList.size();++ti)
@@ -440,20 +483,6 @@ int StateSet::compare(const StateSet& rhs,bool compareAttributeContents) const
         if (rhs_uniform_itr!=rhs._uniformList.end()) return -1;
     }
     else if (rhs_uniform_itr == rhs._uniformList.end()) return 1;
-
-    // check render bin details
-
-    if ( _binMode < rhs._binMode ) return -1;
-    else if ( _binMode > rhs._binMode ) return 1;
-
-    if ( _binMode != INHERIT_RENDERBIN_DETAILS )
-    {
-        if ( _binNum < rhs._binNum ) return -1;
-        else if ( _binNum > rhs._binNum ) return 1;
-
-        if ( _binName < rhs._binName ) return -1;
-        else if ( _binName > rhs._binName ) return 1;
-    }
 
     return 0;
 }
@@ -1658,21 +1687,8 @@ void StateSet::setUpdateCallback(Callback* ac)
             itr!=_parents.end();
             ++itr)
         {
-            //OSG_INFO<<"Setting StateSet parent"<<std::endl;
-
-            osg::Drawable* drawable = dynamic_cast<osg::Drawable*>(*itr);
-            if (drawable)
-            {
-                //drawable->setNumChildrenRequiringUpdateTraversal(drawable->getNumChildrenRequiringUpdateTraversal()+delta);
-            }
-            else
-            {
-                osg::Node* node = dynamic_cast<osg::Node*>(*itr);
-                if (node)
-                {
-                    node->setNumChildrenRequiringUpdateTraversal(node->getNumChildrenRequiringUpdateTraversal()+delta);
-                }
-            }
+            osg::Node* node = *itr;
+            node->setNumChildrenRequiringUpdateTraversal(node->getNumChildrenRequiringUpdateTraversal()+delta);
         }
     }
 }
@@ -1736,19 +1752,8 @@ void StateSet::setEventCallback(Callback* ac)
             itr!=_parents.end();
             ++itr)
         {
-            osg::Drawable* drawable = dynamic_cast<osg::Drawable*>(*itr);
-            if (drawable)
-            {
-                //drawable->setNumChildrenRequiringUpdateTraversal(drawable->getNumChildrenRequiringUpdateTraversal()+delta);
-            }
-            else
-            {
-                osg::Node* node = dynamic_cast<osg::Node*>(*itr);
-                if (node)
-                {
-                    node->setNumChildrenRequiringEventTraversal(node->getNumChildrenRequiringEventTraversal()+delta);
-                }
-            }
+            osg::Node* node = *itr;
+            node->setNumChildrenRequiringEventTraversal(node->getNumChildrenRequiringEventTraversal()+delta);
         }
     }
 }
@@ -1818,19 +1823,8 @@ void StateSet::setNumChildrenRequiringUpdateTraversal(unsigned int num)
                 itr != _parents.end();
                 ++itr)
             {
-                osg::Drawable* drawable = dynamic_cast<osg::Drawable*>(*itr);
-                if (drawable)
-                {
-                    drawable->setNumChildrenRequiringUpdateTraversal(drawable->getNumChildrenRequiringUpdateTraversal()+delta);
-                }
-                else
-                {
-                    osg::Node* node = dynamic_cast<osg::Node*>(*itr);
-                    if (node)
-                    {
-                        node->setNumChildrenRequiringUpdateTraversal(node->getNumChildrenRequiringUpdateTraversal()+delta);
-                    }
-                }
+                osg::Node* node = *itr;
+                node->setNumChildrenRequiringUpdateTraversal(node->getNumChildrenRequiringUpdateTraversal()+delta);
             }
         }
     }
@@ -1863,19 +1857,8 @@ void StateSet::setNumChildrenRequiringEventTraversal(unsigned int num)
                 itr != _parents.end();
                 ++itr)
             {
-                osg::Drawable* drawable = dynamic_cast<osg::Drawable*>(*itr);
-                if (drawable)
-                {
-                    drawable->setNumChildrenRequiringEventTraversal(drawable->getNumChildrenRequiringEventTraversal()+delta);
-                }
-                else
-                {
-                    osg::Node* node = dynamic_cast<osg::Node*>(*itr);
-                    if (node)
-                    {
-                        node->setNumChildrenRequiringEventTraversal(node->getNumChildrenRequiringEventTraversal()+delta);
-                    }
-                }
+                osg::Node* node = *itr;
+                node->setNumChildrenRequiringEventTraversal(node->getNumChildrenRequiringEventTraversal()+delta);
             }
         }
     }

@@ -285,7 +285,7 @@ public:
         {
             if (node.getDrawable(i))
             {
-                updateBound(node.getDrawable(i)->getBound());
+                updateBound(node.getDrawable(i)->getBoundingBox());
             }
         }
 
@@ -704,7 +704,7 @@ void ViewDependentShadowMap::cleanSceneGraph()
     OSG_INFO<<"ViewDependentShadowMap::cleanSceneGraph()"<<std::endl;
 }
 
-ViewDependentShadowMap::ViewDependentData* ViewDependentShadowMap::createViewDependentData(osgUtil::CullVisitor* cv)
+ViewDependentShadowMap::ViewDependentData* ViewDependentShadowMap::createViewDependentData(osgUtil::CullVisitor* /*cv*/)
 {
     return new ViewDependentData(this);
 }
@@ -804,7 +804,7 @@ void ViewDependentShadowMap::cull(osgUtil::CullVisitor& cv)
     if (minZNear>maxZFar) minZNear = maxZFar*settings->getMinimumShadowMapNearFarRatio();
 
     //OSG_NOTICE<<"maxZFar "<<maxZFar<<std::endl;
-    
+
     Frustum frustum(&cv, minZNear, maxZFar);
 
     // return compute near far mode back to it's original settings
@@ -973,7 +973,7 @@ void ViewDependentShadowMap::cull(osgUtil::CullVisitor& cv)
             if (settings->getDebugDraw())
             {
                 camera->getViewport()->x() = pos_x;
-                pos_x += camera->getViewport()->width() + 40;
+                pos_x += static_cast<unsigned int>(camera->getViewport()->width()) + 40;
             }
 
             // transform polytope in model coords into light spaces eye coords.
@@ -1870,7 +1870,7 @@ struct RenderLeafBounds
             // OSG_INFO<<"Reusing light_mvp "<<light_mvp<<std::endl;
         }
 
-        const osg::BoundingBox& bb = renderLeaf->_drawable->getBound();
+        const osg::BoundingBox& bb = renderLeaf->_drawable->getBoundingBox();
         if (bb.valid())
         {
             // OSG_NOTICE<<"checked extents of "<<renderLeaf->_drawable->getName()<<std::endl;
@@ -1963,7 +1963,7 @@ struct RenderLeafBounds
     double min_z, max_z;
 };
 
-bool ViewDependentShadowMap::adjustPerspectiveShadowMapCameraSettings(osgUtil::RenderStage* renderStage, Frustum& frustum, LightData& positionedLight, osg::Camera* camera)
+bool ViewDependentShadowMap::adjustPerspectiveShadowMapCameraSettings(osgUtil::RenderStage* renderStage, Frustum& frustum, LightData& /*positionedLight*/, osg::Camera* camera)
 {
     const ShadowSettings* settings = getShadowedScene()->getShadowSettings();
 
@@ -2303,9 +2303,8 @@ bool ViewDependentShadowMap::assignTexGenSettings(osgUtil::CullVisitor* cv, osg:
     osg::ref_ptr<osg::RefMatrix> refMatrix =
         new osg::RefMatrix( camera->getInverseViewMatrix() * (*(cv->getModelViewMatrix())) );
 
-    cv->getRenderStage()->getPositionalStateContainer()->addPositionedTextureAttribute( textureUnit, refMatrix.get(), texgen );
-
-
+    osgUtil::RenderStage* currentStage = cv->getCurrentRenderBin()->getStage();
+    currentStage->getPositionalStateContainer()->addPositionedTextureAttribute( textureUnit, refMatrix.get(), texgen );
     return true;
 }
 
@@ -2348,7 +2347,7 @@ osg::StateSet* ViewDependentShadowMap::selectStateSetForRenderingShadow(ViewDepe
     osg::ref_ptr<osg::StateSet> stateset = vdd.getStateSet();
 
     OpenThreads::ScopedLock<OpenThreads::Mutex> lock(_accessUnfiromsAndProgramMutex);
-    
+
     vdd.getStateSet()->clear();
 
     vdd.getStateSet()->setTextureAttributeAndModes(0, _fallbackBaseTexture.get(), osg::StateAttribute::ON);
@@ -2417,7 +2416,7 @@ osg::StateSet* ViewDependentShadowMap::selectStateSetForRenderingShadow(ViewDepe
     return vdd.getStateSet();
 }
 
-void ViewDependentShadowMap::resizeGLObjectBuffers(unsigned int maxSize)
+void ViewDependentShadowMap::resizeGLObjectBuffers(unsigned int /*maxSize*/)
 {
     // the way that ViewDependentData is mapped shouldn't
 }

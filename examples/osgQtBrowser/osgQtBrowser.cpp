@@ -29,14 +29,20 @@
 #include <osgViewer/ViewerEventHandlers>
 #include <osgWidget/Browser>
 
+#include <QtGlobal>
+#if QT_VERSION >= 0x050000
+# include <QtWebKitWidgets>
+#else
+# include <QtWebKit>
+#endif
 
-#include <QtWebKit/QWebSettings>
-#include <QtWebKit/QtWebKit>
-#include <QtGui/QGraphicsScene>
-#include <QtGui/QGraphicsView>
-#include <QtGui/QApplication>
-#include <QtGui/QPainter>
-#include <QtGui/QtEvents>
+#include <QWebSettings>
+
+#include <QGraphicsScene>
+#include <QGraphicsView>
+#include <QApplication>
+#include <QPainter>
+#include <QtEvents>
 
 #include <osgQt/QGraphicsViewAdapter>
 #include <osgQt/QWebViewImage>
@@ -53,10 +59,10 @@ class ViewerFrameThread : public OpenThreads::Thread
 
         ~ViewerFrameThread()
         {
-            cancel();
-            while(isRunning())
+            if (isRunning())
             {
-                OpenThreads::Thread::YieldCurrentThread();
+                cancel();
+                join();
             }
         }
 

@@ -51,6 +51,7 @@ typedef char TCHAR;
     //>OSG_IOS
     //IOS includes
     #include "TargetConditionals.h"
+    #include <sys/cdefs.h>
 
     #if (TARGET_OS_IPHONE)
         #include <Availability.h>
@@ -76,7 +77,8 @@ typedef char TCHAR;
     #if (MAC_OS_X_VERSION_MAX_ALLOWED <= 1040)
         #define stat64 stat
     #endif
-#elif defined(__CYGWIN__) || defined(__FreeBSD__) || (defined(__hpux) && !defined(_LARGEFILE64_SOURCE))
+#elif defined(__CYGWIN__) || defined(__FreeBSD__) || defined(__DragonFly__) || \
+      (defined(__hpux) && !defined(_LARGEFILE64_SOURCE))
     #define stat64 stat
 #endif
 
@@ -84,6 +86,10 @@ typedef char TCHAR;
     #include <unistd.h>
     #include <sys/types.h>
     #include <sys/stat.h>
+
+    #if defined(_DARWIN_FEATURE_64_BIT_INODE)
+        #define stat64 stat
+    #endif
 #endif
 
     // set up _S_ISDIR()
@@ -208,8 +214,13 @@ bool osgDB::makeDirectory( const std::string &path )
         if( mkdir( dir.c_str(), 0755 )< 0 )
 #endif
         {
-            OSG_DEBUG << "osgDB::makeDirectory(): "  << strerror(errno) << std::endl;
-            return false;
+            // Only return an error if the directory actually doesn't exist.  It's possible that the directory was created
+            // by another thread or process
+            if (!osgDB::fileExists(dir))
+            {
+                OSG_DEBUG << "osgDB::makeDirectory(): "  << strerror(errno) << std::endl;
+                return false;
+            }
         }
         paths.pop();
     }
@@ -499,7 +510,7 @@ static void appendInstallationLibraryFilePaths(osgDB::FilePathList& filepath)
 #ifdef OSG_DEFAULT_LIBRARY_PATH
 
     // Append the install prefix path to the library search path if configured
-    filepath.push_back(ADDQUOTES(OSG_DEFAULT_LIBRARY_PATH));
+    filepath.push_back(OSG_DEFAULT_LIBRARY_PATH);
 #endif
 }
 
@@ -867,7 +878,7 @@ bool osgDB::containsCurrentWorkingDirectoryReference(const FilePathList& paths)
     }
 
 #elif defined(__APPLE__)
-#if (TARGET_OS_IPHONE)
+#if (TARGET_OS_IPHONE) || (MAC_OS_X_VERSION_MIN_REQUIRED >= 1080)
     #define COMPILE_COCOA_VERSION
 #else
      #define COMPILE_CARBON_VERSION
@@ -1005,7 +1016,7 @@ bool osgDB::containsCurrentWorkingDirectoryReference(const FilePathList& paths)
         }
 
         appendInstallationLibraryFilePaths(filepath);
-
+        
         // Since this is currently the only Objective-C code in the
         // library, we need an autoreleasepool for obj-c memory management.
         // If more Obj-C is added, we might move this pool to another
@@ -1015,29 +1026,28 @@ bool osgDB::containsCurrentWorkingDirectoryReference(const FilePathList& paths)
         NSAutoreleasePool* mypool = [[NSAutoreleasePool alloc] init];
 
         NSString* myBundlePlugInPath;
-        NSString* userSupportDir;
 
         // This will grab the "official" bundle plug in path.
         // It will be YourProgram.app/Contents/PlugIns (for App bundles)
         // or YourProgram/PlugIns (for Unix executables)
         myBundlePlugInPath = [[NSBundle mainBundle] builtInPlugInsPath];
 
-        // Now setup the other search paths
-        // Cocoa has a nice method for tilde expansion.
-        // There's probably a better way of getting this directory, but I
-        // can't find the call.
-        userSupportDir = [@"~/Library/Application Support/OpenSceneGraph/PlugIns" stringByExpandingTildeInPath];
-
-        // Can setup the remaining directories directly in C++
-
         // Since Obj-C and C++ objects don't understand each other,
         // the Obj-C strings must be converted down to C strings so
         // C++ can make them into C++ strings.
         filepath.push_back( [myBundlePlugInPath UTF8String] );
-        filepath.push_back( [userSupportDir UTF8String] );
+        
+        // add all application-support-folders
+        NSArray *systemSearchPaths = NSSearchPathForDirectoriesInDomains(NSApplicationSupportDirectory, NSAllDomainsMask, YES);
 
-        filepath.push_back( "/Library/Application Support/OpenSceneGraph/PlugIns" );
-        filepath.push_back( "/Network/Library/Application Support/OpenSceneGraph/PlugIns" );
+        NSFileManager *fileManager = [NSFileManager defaultManager];
+
+        for (NSString *systemPath in systemSearchPaths) {
+            NSString *systemPluginsPath = [systemPath stringByAppendingPathComponent:@"OpenSceneGraph/PlugIns"];
+            if ([fileManager fileExistsAtPath:systemPluginsPath]) {
+                filepath.push_back( [systemPluginsPath UTF8String] );
+            }
+        }
 
         // Clean up the autorelease pool
         [mypool release];
@@ -1106,71 +1116,29 @@ bool osgDB::containsCurrentWorkingDirectoryReference(const FilePathList& paths)
         }
 
         // Next, check the User's Application Support folder
-        errCode = FSFindFolder( kUserDomain, kApplicationSupportFolderType, kDontCreateFolder, &f );
-        if(noErr == errCode)
+        int domains[3] = { kUserDomain, kLocalDomain, kNetworkDomain };
+        
+        for(unsigned int domain_ndx = 0; domain_ndx < 3; ++domain_ndx)
         {
-            // Get the URL
-            url = CFURLCreateFromFSRef( 0, &f );
-            if(url)
+            errCode = FSFindFolder( domains[domain_ndx], kApplicationSupportFolderType, kDontCreateFolder, &f );
+            if(noErr == errCode)
             {
-                filepath.push_back(GetPathFromCFURLRef(url) + OSG_PLUGIN_PATH);
-                CFRelease( url );
+                // Get the URL
+                url = CFURLCreateFromFSRef( 0, &f );
+                if(url)
+                {
+                    filepath.push_back(GetPathFromCFURLRef(url) + OSG_PLUGIN_PATH);
+                    CFRelease( url );
+                }
+                else
+                    OSG_NOTIFY( osg::DEBUG_INFO ) << "Couldn't create CFURLRef for application support Path at ndx " << domain_ndx << std::endl;
+
+                url = NULL;
             }
             else
-                OSG_NOTIFY( osg::DEBUG_INFO ) << "Couldn't create CFURLRef for User's application support Path" << std::endl;
-
-            url = NULL;
-        }
-        else
-        {
-            OSG_NOTIFY( osg::DEBUG_INFO ) << "Couldn't find the User's Application Support Path" << std::endl;
-        }
-
-        // Next, check the Local System's Application Support Folder
-        errCode = FSFindFolder( kLocalDomain, kApplicationSupportFolderType, kDontCreateFolder, &f );
-        if(noErr == errCode)
-        {
-            // Get the URL
-            url = CFURLCreateFromFSRef( 0, &f );
-
-            if(url)
             {
-                filepath.push_back(GetPathFromCFURLRef(url) + OSG_PLUGIN_PATH);
-                CFRelease( url );
+                OSG_NOTIFY( osg::DEBUG_INFO ) << "Couldn't find the User's Application Support Path at ndx "  << domain_ndx << std::endl;
             }
-            else
-                OSG_NOTIFY( osg::DEBUG_INFO ) << "Couldn't create CFURLRef for local System's ApplicationSupport Path" << std::endl;
-
-            url = NULL;
-        }
-        else
-        {
-            OSG_NOTIFY( osg::DEBUG_INFO ) << "Couldn't find the Local System's Application Support Path" << std::endl;
-        }
-
-        // Finally, check the Network Application Support Folder
-        // This one has a likely chance of not existing so an error
-        // may be returned. Don't panic.
-        errCode = FSFindFolder( kNetworkDomain, kApplicationSupportFolderType, kDontCreateFolder, &f );
-        if(noErr == errCode)
-        {
-            // Get the URL
-            url = CFURLCreateFromFSRef( 0, &f );
-
-            if(url)
-            {
-                filepath.push_back(GetPathFromCFURLRef(url) + OSG_PLUGIN_PATH);
-                CFRelease( url );
-            }
-            else
-                OSG_NOTIFY( osg::DEBUG_INFO ) << "Couldn't create CFURLRef for network Application Support Path" << std::endl;
-
-            url = NULL;
-        }
-        else
-        {
-        // had to comment out as it segfauls the OSX app otherwise
-            // OSG_NOTIFY( osg::DEBUG_INFO ) << "Couldn't find the Network Application Support Path" << std::endl;
         }
     }
     #else

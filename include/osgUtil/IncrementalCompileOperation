@@ -24,7 +24,7 @@ class OSGUTIL_EXPORT StateToCompile : public osg::NodeVisitor
 {
     public:
 
-        StateToCompile(GLObjectsVisitor::Mode mode);
+        StateToCompile(GLObjectsVisitor::Mode mode, osg::Object* markerObject=0);
 
         typedef std::set<osg::Drawable*> DrawableSet;
         typedef std::set<osg::StateSet*> StateSetSet;
@@ -40,11 +40,11 @@ class OSGUTIL_EXPORT StateToCompile : public osg::NodeVisitor
         ProgramSet  _programs;
         bool        _assignPBOToImages;
         osg::ref_ptr<osg::PixelBufferObject> _pbo;
+        osg::ref_ptr<osg::Object> _markerObject;
 
         bool empty() const { return _textures.empty() &&  _programs.empty() && _drawables.empty(); }
 
         virtual void apply(osg::Node& node);
-        virtual void apply(osg::Geode& node);
 
         virtual void apply(osg::Drawable& drawable);
         virtual void apply(osg::StateSet& stateset);
@@ -291,11 +291,15 @@ class OSGUTIL_EXPORT IncrementalCompileOperation : public osg::GraphicsOperation
         OpenThreads::Mutex* getCompiledMutex() { return &_compiledMutex; }
         CompileSets& getCompiled() { return _compiled; }
 
+        void setMarkerObject(osg::Object* mo) { _markerObject = mo; }
+        osg::Object* getMarkerObject() { return _markerObject.get(); }
+        const osg::Object* getMarkerObject() const { return _markerObject.get(); }
+
     protected:
 
         virtual ~IncrementalCompileOperation();
 
-        void compileSets(CompileSets& toCompile, CompileInfo compileInfo);
+        void compileSets(CompileSets& toCompile, CompileInfo& compileInfo);
 
         double                              _targetFrameRate;
         double                              _minimumTimeAvailableForGLCompileAndDeletePerFrame;
@@ -315,6 +319,8 @@ class OSGUTIL_EXPORT IncrementalCompileOperation : public osg::GraphicsOperation
         CompileSets                         _compiled;
 
         ContextSet                          _contexts;
+
+        osg::ref_ptr<osg::Object>           _markerObject;
 
 };
 

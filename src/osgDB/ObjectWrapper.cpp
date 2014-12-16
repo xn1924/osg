@@ -18,7 +18,7 @@
 #include <osg/ClampColor>
 #include <osg/Fog>
 #include <osg/FragmentProgram>
-#include <osg/GL2Extensions>
+#include <osg/GLExtensions>
 #include <osg/PointSprite>
 #include <osg/StateSet>
 #include <osg/StencilTwoSided>
@@ -84,10 +84,18 @@ void osgDB::split( const std::string& src, StringList& list, char separator )
 //
 // ObjectWrapper
 //
-ObjectWrapper::ObjectWrapper( osg::Object* proto, const std::string& name,
+ObjectWrapper::ObjectWrapper( CreateInstanceFunc* createInstanceFunc, const std::string& name,
                               const std::string& associates )
 :   osg::Referenced(),
-    _proto(proto), _name(name), _version(0)
+    _createInstanceFunc(createInstanceFunc), _name(name), _version(0)
+{
+    split( associates, _associates );
+}
+
+ObjectWrapper::ObjectWrapper( CreateInstanceFunc* createInstanceFunc, const std::string& domain, const std::string& name,
+                              const std::string& associates )
+:   osg::Referenced(),
+    _createInstanceFunc(createInstanceFunc), _domain(domain), _name(name), _version(0)
 {
     split( associates, _associates );
 }
@@ -96,7 +104,7 @@ void ObjectWrapper::addSerializer( BaseSerializer* s, BaseSerializer::Type t )
 {
     s->_firstVersion = _version;
     _serializers.push_back(s);
-    _typeList.push_back(static_cast<int>(t));
+    _typeList.push_back(t);
 }
 
 void ObjectWrapper::markSerializerAsRemoved( const std::string& name )
@@ -140,15 +148,59 @@ BaseSerializer* ObjectWrapper::getSerializer( const std::string& name )
     return NULL;
 }
 
+BaseSerializer* ObjectWrapper::getSerializer( const std::string& name, BaseSerializer::Type& type)
+{
+
+    unsigned int i = 0;
+    for (SerializerList::iterator itr=_serializers.begin();
+         itr!=_serializers.end();
+         ++itr, ++i )
+    {
+        if ( (*itr)->getName()==name )
+        {
+            type = _typeList[i];
+            return itr->get();
+        }
+    }
+
+    for ( StringList::const_iterator itr=_associates.begin(); itr!=_associates.end(); ++itr )
+    {
+        const std::string& assocName = *itr;
+        ObjectWrapper* assocWrapper = Registry::instance()->getObjectWrapperManager()->findWrapper(assocName);
+        if ( !assocWrapper )
+        {
+            osg::notify(osg::WARN) << "ObjectWrapper::getSerializer(): Unsupported associated class "
+                                   << assocName << std::endl;
+            continue;
+        }
+
+        i = 0;
+        for ( SerializerList::iterator aitr=assocWrapper->_serializers.begin();
+              aitr!=assocWrapper->_serializers.end();
+              ++aitr, ++i )
+        {
+            if ( (*aitr)->getName()==name )
+            {
+                type = assocWrapper->_typeList[i];
+                return aitr->get();
+            }
+        }
+    }
+    type = BaseSerializer::RW_UNDEFINED;
+    return NULL;
+}
+
 bool ObjectWrapper::read( InputStream& is, osg::Object& obj )
 {
     bool readOK = true;
+    int inputVersion = is.getFileVersion(_domain);
     for ( SerializerList::iterator itr=_serializers.begin();
           itr!=_serializers.end(); ++itr )
     {
         BaseSerializer* serializer = itr->get();
-        if ( serializer->_firstVersion <= is.getFileVersion() &&
-             is.getFileVersion() <= serializer->_lastVersion)
+        if ( serializer->_firstVersion <= inputVersion &&
+             inputVersion <= serializer->_lastVersion &&
+             serializer->supportsReadWrite())
         {
             if ( !serializer->read(is, obj) )
             {
@@ -176,12 +228,14 @@ bool ObjectWrapper::read( InputStream& is, osg::Object& obj )
 bool ObjectWrapper::write( OutputStream& os, const osg::Object& obj )
 {
     bool writeOK = true;
+    int outputVersion = os.getFileVersion(_domain);
     for ( SerializerList::iterator itr=_serializers.begin();
           itr!=_serializers.end(); ++itr )
     {
         BaseSerializer* serializer = itr->get();
-        if ( serializer->_firstVersion <= OPENSCENEGRAPH_SOVERSION &&
-             OPENSCENEGRAPH_SOVERSION <= serializer->_lastVersion)
+        if ( serializer->_firstVersion <= outputVersion &&
+             outputVersion <= serializer->_lastVersion  &&
+             serializer->supportsReadWrite())
         {
             if ( !serializer->write(os, obj) )
             {
@@ -198,7 +252,7 @@ bool ObjectWrapper::write( OutputStream& os, const osg::Object& obj )
     return writeOK;
 }
 
-bool ObjectWrapper::readSchema( const StringList& properties, const std::vector<int>& )
+bool ObjectWrapper::readSchema( const StringList& properties, const TypeList& )
 {
     // FIXME: At present, I didn't do anything to determine serializers from their types...
     if ( !_backupSerializers.size() )
@@ -241,29 +295,36 @@ bool ObjectWrapper::readSchema( const StringList& properties, const std::vector<
     return size==_serializers.size();
 }
 
-void ObjectWrapper::writeSchema( StringList& properties, std::vector<int>& types )
+void ObjectWrapper::writeSchema( StringList& properties, TypeList& types )
 {
-    for ( SerializerList::iterator itr=_serializers.begin();
-          itr!=_serializers.end(); ++itr )
+    SerializerList::iterator sitr = _serializers.begin();
+    TypeList::iterator titr = _typeList.begin();
+    while(sitr!=_serializers.end() && titr!=_typeList.end())
     {
-        properties.push_back( (*itr)->getName() );
-    }
-
-    for ( std::vector<int>::iterator itr=_typeList.begin();
-          itr!=_typeList.end(); ++itr )
-    {
-        types.push_back( (*itr) );
+        if ((*sitr)->supportsReadWrite())
+        {
+            properties.push_back( (*sitr)->getName() );
+            types.push_back( (*titr) );
+        }
+        ++sitr;
+        ++titr;
     }
 }
+
+void ObjectWrapper::addMethodObject(const std::string& methodName, MethodObject* mo)
+{
+    _methodObjectMap.insert(MethodObjectMap::value_type(methodName, mo));
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 //
 // RegisterWrapperProxy
 //
-RegisterWrapperProxy::RegisterWrapperProxy( osg::Object* proto, const std::string& name,
+RegisterWrapperProxy::RegisterWrapperProxy( ObjectWrapper::CreateInstanceFunc *createInstanceFunc, const std::string& name,
                         const std::string& associates, AddPropFunc func )
 {
-    _wrapper = new ObjectWrapper( proto, name, associates );
+    _wrapper = new ObjectWrapper( createInstanceFunc, name, associates );
     if ( func ) (*func)( _wrapper.get() );
 
     if (Registry::instance())
@@ -273,6 +334,31 @@ RegisterWrapperProxy::RegisterWrapperProxy( osg::Object* proto, const std::strin
 }
 
 RegisterWrapperProxy::~RegisterWrapperProxy()
+{
+    if (Registry::instance())
+    {
+        Registry::instance()->getObjectWrapperManager()->removeWrapper( _wrapper.get() );
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// RegisterCustomWrapperProxy
+//
+RegisterCustomWrapperProxy::RegisterCustomWrapperProxy(
+        ObjectWrapper::CreateInstanceFunc *createInstanceFunc, const std::string& domain, const std::string& name,
+        const std::string& associates, AddPropFunc func )
+{
+    _wrapper = new ObjectWrapper( createInstanceFunc, domain, name, associates );
+    if ( func ) (*func)( domain.c_str(), _wrapper.get() );
+
+    if (Registry::instance())
+    {
+        Registry::instance()->getObjectWrapperManager()->addWrapper( _wrapper.get() );
+    }
+}
+
+RegisterCustomWrapperProxy::~RegisterCustomWrapperProxy()
 {
     if (Registry::instance())
     {
@@ -344,6 +430,9 @@ ObjectWrapperManager::ObjectWrapperManager()
     glTable.add( "GL_LIGHT6", GL_LIGHT6 );
     glTable.add( "GL_LIGHT7", GL_LIGHT7 );
 
+    glTable.add("GL_VERTEX_PROGRAM_POINT_SIZE", GL_VERTEX_PROGRAM_POINT_SIZE);
+    glTable.add("GL_VERTEX_PROGRAM_TWO_SIDE", GL_VERTEX_PROGRAM_TWO_SIDE);
+
     // Functions
     glTable.add( "NEVER", GL_NEVER );
     glTable.add( "LESS", GL_LESS );
@@ -414,6 +503,16 @@ ObjectWrapperManager::ObjectWrapperManager()
     glTable.add( "GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG",GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG );
     glTable.add( "GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG",GL_COMPRESSED_RGBA_PVRTC_2BPPV1_IMG );
     glTable.add( "GL_ETC1_RGB8_OES",GL_ETC1_RGB8_OES );
+    glTable.add( "GL_COMPRESSED_RGB8_ETC2",GL_COMPRESSED_RGB8_ETC2 );
+    glTable.add( "GL_COMPRESSED_SRGB8_ETC2",GL_COMPRESSED_SRGB8_ETC2 );
+    glTable.add( "GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2",GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2 );
+    glTable.add( "GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2",GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2 );
+    glTable.add( "GL_COMPRESSED_RGBA8_ETC2_EAC",GL_COMPRESSED_RGBA8_ETC2_EAC );
+    glTable.add( "GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC",GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC );
+    glTable.add( "GL_COMPRESSED_R11_EAC",GL_COMPRESSED_R11_EAC );
+    glTable.add( "GL_COMPRESSED_SIGNED_R11_EAC",GL_COMPRESSED_SIGNED_R11_EAC );
+    glTable.add( "GL_COMPRESSED_RG11_EAC",GL_COMPRESSED_RG11_EAC );
+    glTable.add( "GL_COMPRESSED_SIGNED_RG11_EAC",GL_COMPRESSED_SIGNED_RG11_EAC );
 
     // Texture source types
     glTable.add( "GL_BYTE", GL_BYTE );
@@ -484,16 +583,28 @@ ObjectWrapperManager::ObjectWrapperManager()
     arrayTable.add( "Vec2bArray", ID_VEC2B_ARRAY );
     arrayTable.add( "Vec3bArray", ID_VEC3B_ARRAY );
     arrayTable.add( "Vec4bArray", ID_VEC4B_ARRAY );
+    arrayTable.add( "Vec2ubArray", ID_VEC2UB_ARRAY );
+    arrayTable.add( "Vec3ubArray", ID_VEC3UB_ARRAY );
     arrayTable.add( "Vec4ubArray", ID_VEC4UB_ARRAY );
     arrayTable.add( "Vec2sArray", ID_VEC2S_ARRAY );
     arrayTable.add( "Vec3sArray", ID_VEC3S_ARRAY );
     arrayTable.add( "Vec4sArray", ID_VEC4S_ARRAY );
+    arrayTable.add( "Vec2usArray", ID_VEC2US_ARRAY );
+    arrayTable.add( "Vec3usArray", ID_VEC3US_ARRAY );
+    arrayTable.add( "Vec4usArray", ID_VEC4US_ARRAY );
     arrayTable.add( "Vec2fArray", ID_VEC2_ARRAY );
     arrayTable.add( "Vec3fArray", ID_VEC3_ARRAY );
     arrayTable.add( "Vec4fArray", ID_VEC4_ARRAY );
     arrayTable.add( "Vec2dArray", ID_VEC2D_ARRAY );
     arrayTable.add( "Vec3dArray", ID_VEC3D_ARRAY );
     arrayTable.add( "Vec4dArray", ID_VEC4D_ARRAY );
+
+    arrayTable.add( "Vec2iArray", ID_VEC2I_ARRAY );
+    arrayTable.add( "Vec3iArray", ID_VEC3I_ARRAY );
+    arrayTable.add( "Vec4iArray", ID_VEC4I_ARRAY );
+    arrayTable.add( "Vec2uiArray", ID_VEC2UI_ARRAY );
+    arrayTable.add( "Vec3uiArray", ID_VEC3UI_ARRAY );
+    arrayTable.add( "Vec4uiArray", ID_VEC4UI_ARRAY );
 
     IntLookup& primitiveTable = _globalMap["PrimitiveType"];
 

@@ -20,8 +20,8 @@
 
 #include <osgWidget/PdfReader>
 
-#include <osgPresentation/SlideShowConstructor>
-#include <osgPresentation/AnimationMaterial>
+#include <osgPresentation/deprecated/SlideShowConstructor>
+#include <osgPresentation/deprecated/AnimationMaterial>
 
 #include <stdio.h>
 #include <string.h>
@@ -247,7 +247,5 @@ osgDB::ReaderWriter::ReadResult ReaderWriterPaths::read_rotation_path(std::istre
         }
 
     }
-    OSG_NOTICE<<"finished"<<std::endl;
-
     return animation.get();
 }

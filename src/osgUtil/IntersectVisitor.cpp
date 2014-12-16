@@ -179,7 +179,8 @@ void IntersectVisitor::IntersectState::addLineSegment(osg::LineSegment* seg)
 }
 
 
-IntersectVisitor::IntersectVisitor()
+IntersectVisitor::IntersectVisitor():
+    osg::NodeVisitor(osg::NodeVisitor::INTERSECTION_VISITOR, osg::NodeVisitor::TRAVERSE_ACTIVE_CHILDREN)
 {
 
     // override the default node visitor mode.
@@ -399,7 +400,6 @@ void IntersectVisitor::apply(Node& node)
     leaveNode();
 }
 
-
 struct TriangleHit
 {
     TriangleHit(unsigned int index, const osg::Vec3& normal, float r1, const osg::Vec3* v1, float r2, const osg::Vec3* v2, float r3, const osg::Vec3* v3):
@@ -590,7 +590,7 @@ bool IntersectVisitor::intersect(Drawable& drawable)
 
     IntersectState* cis = _intersectStateStack.back().get();
 
-    const BoundingBox& bb = drawable.getBound();
+    const BoundingBox& bb = drawable.getBoundingBox();
 
     for(IntersectState::LineSegmentList::iterator sitr=cis->_segList.begin();
         sitr!=cis->_segList.end();
@@ -659,6 +659,12 @@ bool IntersectVisitor::intersect(Drawable& drawable)
 
     return hitFlag;
 
+}
+
+
+void IntersectVisitor::apply(Drawable& drawable)
+{
+    intersect(drawable);
 }
 
 void IntersectVisitor::apply(Geode& geode)

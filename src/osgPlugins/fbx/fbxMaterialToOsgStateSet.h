@@ -22,7 +22,8 @@ struct StateSetContent
     StateSetContent()
         : diffuseFactor(1.0),
         reflectionFactor(1.0),
-        emissiveFactor(1.0)
+        emissiveFactor(1.0),
+        ambientFactor(1.0)
     {
     }
 
@@ -33,6 +34,7 @@ struct StateSetContent
     osg::ref_ptr<osg::Texture2D> opacityTexture;
     osg::ref_ptr<osg::Texture2D> reflectionTexture;
     osg::ref_ptr<osg::Texture2D> emissiveTexture;
+    osg::ref_ptr<osg::Texture2D> ambientTexture;
     // more textures types here...
 
     // textures maps channels names...
@@ -40,12 +42,14 @@ struct StateSetContent
     std::string opacityChannel;
     std::string reflectionChannel;
     std::string emissiveChannel;
+    std::string ambientChannel;
     // more channels names here...
 
     // combining factors...
     double diffuseFactor;
     double reflectionFactor;
     double emissiveFactor;
+    double ambientFactor;
     // more combining factors here...
 
     double diffuseScaleU;
@@ -54,6 +58,8 @@ struct StateSetContent
     double opacityScaleV;
     double emissiveScaleU;
     double emissiveScaleV;
+    double ambientScaleU;
+    double ambientScaleV;
 
     // texture units (eventually used for each texture map)...
     enum TextureUnit
@@ -61,13 +67,14 @@ struct StateSetContent
         DIFFUSE_TEXTURE_UNIT = 0,
         OPACITY_TEXTURE_UNIT,
         REFLECTION_TEXTURE_UNIT,
-        EMISSIVE_TEXTURE_UNIT
+        EMISSIVE_TEXTURE_UNIT,
+        AMBIENT_TEXTURE_UNIT
         // more texture units here...
     };
 };
 
 //We use the pointers set by the importer to not duplicate materials and textures.
-typedef std::map<const KFbxSurfaceMaterial *, StateSetContent> FbxMaterialMap;
+typedef std::map<const FbxSurfaceMaterial *, StateSetContent> FbxMaterialMap;
 
 //This map is used to not load the same image more than 1 time.
 typedef std::map<std::string, osg::Texture2D *> ImageMap;
@@ -75,8 +82,8 @@ typedef std::map<std::string, osg::Texture2D *> ImageMap;
 class FbxMaterialToOsgStateSet
 {
 public:
-    //Convert a KfbxSurfaceMaterial to a osgMaterial and an osgTexture.
-    StateSetContent convert(const KFbxSurfaceMaterial* pFbxMat);
+    //Convert a FbxSurfaceMaterial to a osgMaterial and an osgTexture.
+    StateSetContent convert(const FbxSurfaceMaterial* pFbxMat);
 
     //dir is the directory where fbx is stored (for relative path).
     FbxMaterialToOsgStateSet(const std::string& dir, const osgDB::Options* options, bool lightmapTextures) :
@@ -88,7 +95,7 @@ public:
 private:
     //Convert a texture fbx to an osg texture.
     osg::ref_ptr<osg::Texture2D>
-    fbxTextureToOsgTexture(const KFbxFileTexture* pOsgTex);
+    fbxTextureToOsgTexture(const FbxFileTexture* pOsgTex);
     FbxMaterialMap       _fbxMaterialMap;
     ImageMap              _imageMap;
     const osgDB::Options* _options;

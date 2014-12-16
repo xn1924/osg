@@ -43,7 +43,7 @@ bool Locator::convertModelToLocal(const osg::Vec3d& world, osg::Vec3d& local) co
     return true;
 }
 
-bool Locator::computeLocalBounds(Locator& source, osg::Vec3d& bottomLeft, osg::Vec3d& topRight) const
+bool Locator::computeLocalBounds(Locator& /*source*/, osg::Vec3d& bottomLeft, osg::Vec3d& topRight) const
 {
     typedef std::list<osg::Vec3d> Corners;
     Corners corners;
@@ -109,7 +109,7 @@ bool Locator::computeLocalBounds(Locator& source, osg::Vec3d& bottomLeft, osg::V
 
 bool Locator::computeLocalBounds(osg::Vec3d& bottomLeft, osg::Vec3d& topRight) const
 {
-    OSG_NOTICE<<"Locator::computeLocalBounds"<<std::endl;
+    OSG_INFO<<"Locator::computeLocalBounds"<<std::endl;
 
     typedef std::list<osg::Vec3d> Corners;
     Corners corners;
@@ -221,4 +221,36 @@ void Locator::locatorModified()
         (*itr)->locatorModified(this);
     }
 
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// TransformLocatorCallback
+//
+TransformLocatorCallback::TransformLocatorCallback(osg::MatrixTransform* transform):
+    _transform(transform)
+{}
+
+void TransformLocatorCallback::locatorModified(Locator* locator)
+{
+    if (_transform.valid()) _transform->setMatrix(locator->getTransform());
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// TexGenLocatorCallback
+//
+TexGenLocatorCallback::TexGenLocatorCallback(osg::TexGen* texgen, Locator* geometryLocator, Locator* imageLocator):
+    _texgen(texgen),
+    _geometryLocator(geometryLocator),
+    _imageLocator(imageLocator) {}
+
+void TexGenLocatorCallback::locatorModified(Locator*)
+{
+    if (!_texgen || !_geometryLocator || !_imageLocator) return;
+
+    _texgen->setPlanesFromMatrix(
+        _geometryLocator->getTransform() *
+        osg::Matrix::inverse(_imageLocator->getTransform()));
 }

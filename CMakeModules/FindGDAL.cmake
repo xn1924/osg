@@ -19,6 +19,15 @@
 # This makes the presumption that you are include gdal.h like
 # #include "gdal.h"
 
+# prefer FindGDAL from cmake distribution
+if(EXISTS ${CMAKE_ROOT}/Modules/FindGDAL.cmake)
+  include(${CMAKE_ROOT}/Modules/FindGDAL.cmake)
+
+  if(GDAL_FOUND)
+    return()
+  endif()
+endif()
+
 FIND_PATH(GDAL_INCLUDE_DIR gdal.h
   PATHS
   $ENV{GDAL_DIR}

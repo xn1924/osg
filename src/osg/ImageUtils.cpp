@@ -22,7 +22,7 @@
 namespace osg
 {
 
-struct FindRangeOperator
+struct FindRangeOperator : public CastAndScaleToFloatOperation
 {
     FindRangeOperator():
         _rmin(FLT_MAX),
@@ -168,7 +168,7 @@ void _copyRowAndScale(const unsigned char* src, GLenum srcDataType, unsigned cha
     }
 }
 
-struct RecordRowOperator
+struct RecordRowOperator : public CastAndScaleToFloatOperation
 {
     RecordRowOperator(unsigned int num):_colours(num),_pos(0) {}
 
@@ -200,7 +200,7 @@ struct WriteRowOperator
 bool copyImage(const osg::Image* srcImage, int src_s, int src_t, int src_r, int width, int height, int depth,
                osg::Image* destImage, int dest_s, int dest_t, int dest_r, bool doRescale)
 {
-    if ((src_s+width) > (dest_s + destImage->s()))
+    if ((dest_s+width) > (destImage->s()))
     {
         OSG_NOTICE<<"copyImage("<<srcImage<<", "<<src_s<<", "<< src_t<<", "<<src_r<<", "<<width<<", "<<height<<", "<<depth<<std::endl;
         OSG_NOTICE<<"          "<<destImage<<", "<<dest_s<<", "<< dest_t<<", "<<dest_r<<", "<<doRescale<<")"<<std::endl;
@@ -208,7 +208,7 @@ bool copyImage(const osg::Image* srcImage, int src_s, int src_t, int src_r, int 
         return false;
     }
 
-    if ((src_t+height) > (dest_t + destImage->t()))
+    if ((dest_t+height) > (destImage->t()))
     {
         OSG_NOTICE<<"copyImage("<<srcImage<<", "<<src_s<<", "<< src_t<<", "<<src_r<<", "<<width<<", "<<height<<", "<<depth<<std::endl;
         OSG_NOTICE<<"          "<<destImage<<", "<<dest_s<<", "<< dest_t<<", "<<dest_r<<", "<<doRescale<<")"<<std::endl;
@@ -216,7 +216,7 @@ bool copyImage(const osg::Image* srcImage, int src_s, int src_t, int src_r, int 
         return false;
     }
 
-    if ((src_r+depth) > (dest_r + destImage->r()))
+    if ((dest_r+depth) > (destImage->r()))
     {
         OSG_NOTICE<<"copyImage("<<srcImage<<", "<<src_s<<", "<< src_t<<", "<<src_r<<", "<<width<<", "<<height<<", "<<depth<<std::endl;
         OSG_NOTICE<<"          "<<destImage<<", "<<dest_s<<", "<< dest_t<<", "<<dest_r<<", "<<doRescale<<")"<<std::endl;
@@ -316,7 +316,7 @@ bool copyImage(const osg::Image* srcImage, int src_s, int src_t, int src_r, int 
             }
         }
 
-        return false;
+        return true;
     }
 
 }
@@ -613,6 +613,92 @@ osg::Image* createSpotLightImage(const osg::Vec4& centerColour, const osg::Vec4&
     return image;
 #endif
 }
+
+
+
+struct ModulateAlphaByColorOperator
+{
+    ModulateAlphaByColorOperator(const osg::Vec4& colour):_colour(colour) { _lum = _colour.length(); }
+
+    osg::Vec4 _colour;
+    float _lum;
+
+    inline void luminance(float&) const {}
+    inline void alpha(float&) const {}
+    inline void luminance_alpha(float& l,float& a) const { a*= l*_lum; }
+    inline void rgb(float&,float&,float&) const {}
+    inline void rgba(float& r,float& g,float& b,float& a) const { a = (r*_colour.r()+g*_colour.g()+b*_colour.b()+a*_colour.a()); }
+};
+
+struct ReplaceAlphaWithLuminanceOperator
+{
+    ReplaceAlphaWithLuminanceOperator() {}
+
+    inline void luminance(float&) const {}
+    inline void alpha(float&) const {}
+    inline void luminance_alpha(float& l,float& a) const { a = l; }
+    inline void rgb(float&,float&,float&) const { }
+    inline void rgba(float& r,float& g,float& b,float& a) const { float l = (r+g+b)*0.3333333; a = l; }
+};
+
+osg::Image* colorSpaceConversion(ColorSpaceOperation op, osg::Image* image, const osg::Vec4& colour)
+{
+    GLenum requiredPixelFormat = image->getPixelFormat();
+    switch(op)
+    {
+        case (MODULATE_ALPHA_BY_LUMINANCE):
+        case (MODULATE_ALPHA_BY_COLOR):
+        case (REPLACE_ALPHA_WITH_LUMINANCE):
+            if (image->getPixelFormat()==GL_RGB || image->getPixelFormat()==GL_BGR) requiredPixelFormat = GL_RGBA;
+            break;
+        case (REPLACE_RGB_WITH_LUMINANCE):
+            if (image->getPixelFormat()==GL_RGB || image->getPixelFormat()==GL_BGR) requiredPixelFormat = GL_LUMINANCE;
+            break;
+        default:
+            break;
+    }
+
+    if (requiredPixelFormat!=image->getPixelFormat())
+    {
+        osg::Image* newImage = new osg::Image;
+        newImage->allocateImage(image->s(), image->t(), image->r(), requiredPixelFormat, image->getDataType());
+        osg::copyImage(image, 0, 0, 0, image->s(), image->t(), image->r(),
+                    newImage, 0, 0, 0, false);
+
+        image = newImage;
+    }
+
+    switch(op)
+    {
+        case (MODULATE_ALPHA_BY_LUMINANCE):
+        {
+            OSG_NOTICE<<"doing conversion MODULATE_ALPHA_BY_LUMINANCE"<<std::endl;
+            osg::modifyImage(image, ModulateAlphaByLuminanceOperator());
+            return image;
+        }
+        case (MODULATE_ALPHA_BY_COLOR):
+        {
+            OSG_NOTICE<<"doing conversion MODULATE_ALPHA_BY_COLOUR"<<std::endl;
+            osg::modifyImage(image, ModulateAlphaByColorOperator(colour));
+            return image;
+        }
+        case (REPLACE_ALPHA_WITH_LUMINANCE):
+        {
+            OSG_NOTICE<<"doing conversion REPLACE_ALPHA_WITH_LUMINANCE"<<std::endl;
+            osg::modifyImage(image, ReplaceAlphaWithLuminanceOperator());
+            return image;
+        }
+        case (REPLACE_RGB_WITH_LUMINANCE):
+        {
+            OSG_NOTICE<<"doing conversion REPLACE_RGB_WITH_LUMINANCE"<<std::endl;
+            // no work here required to be done as it'll already be done by copyImage above.
+            return image;
+        }
+        default:
+            return image;
+    }
+}
+
 
 
 }

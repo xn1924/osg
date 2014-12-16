@@ -120,7 +120,7 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
 - (void)setGraphicsWindow: (osgViewer::GraphicsWindowIOS*) win;
 - (osgViewer::GraphicsWindowIOS*) getGraphicsWindow;
 - (void)setOpenGLContext: (EAGLContext*) context;
-
+- (void)updateDimensions;
 - (BOOL)createFramebuffer;
 - (void)destroyFramebuffer;
 - (void)swapBuffers;
@@ -163,7 +163,7 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
 }
 
 
-- (unsigned int)computeTouchId: (UITouch*) touch 
+- (unsigned int)computeTouchId: (UITouch*) touch mayCleanup: (bool)may_cleanup
 {
     unsigned int result(0);
     
@@ -202,10 +202,10 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
             {
                 TouchPointsIdMapping::iterator itr = _touchPointsIdMapping->find(touch);
                 // std::cout<< "remove: " << touch << " num: " << _touchPointsIdMapping->size() << " found: " << (itr != _touchPointsIdMapping->end()) << std::endl;
-                
                 if (itr != _touchPointsIdMapping->end()) {
                     result = itr->second;
-                    _touchPointsIdMapping->erase(itr);
+                    if(may_cleanup)
+                        _touchPointsIdMapping->erase(itr);
                 }
                 if(_touchPointsIdMapping->size() == 0) {
                     _lastTouchPointId = 0;
@@ -267,16 +267,22 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
         // Get the layer
         CAEAGLLayer *eaglLayer = (CAEAGLLayer *)self.layer;
         
-        eaglLayer.opaque = YES;//need to look into this, can't remember why it's here, i.e. do I set it to no for alphaed window?
+        osgViewer::GraphicsWindowIOS::WindowData* win_data(NULL);
+        if (_win->getTraits()->inheritedWindowData.valid())
+            win_data = dynamic_cast<osgViewer::GraphicsWindowIOS::WindowData*>(_win->getTraits()->inheritedWindowData.get());
+        
+        eaglLayer.opaque = win_data ? !win_data->getCreateTransparentView() : YES;
+        bool retained_backing = win_data ? win_data->getUseRetainedBacking() : NO;
+
         if(_win->getTraits()->alpha > 0)
         {
             //create layer with alpha channel RGBA8
             eaglLayer.drawableProperties = [NSDictionary dictionaryWithObjectsAndKeys:
-                                            [NSNumber numberWithBool:NO], kEAGLDrawablePropertyRetainedBacking, kEAGLColorFormatRGBA8, kEAGLDrawablePropertyColorFormat, nil];
+                                            [NSNumber numberWithBool:retained_backing], kEAGLDrawablePropertyRetainedBacking, kEAGLColorFormatRGBA8, kEAGLDrawablePropertyColorFormat, nil];
         }else{
             //else no alpha, IOS uses RBG565
             eaglLayer.drawableProperties = [NSDictionary dictionaryWithObjectsAndKeys:
-                                            [NSNumber numberWithBool:NO], kEAGLDrawablePropertyRetainedBacking, kEAGLColorFormatRGB565, kEAGLDrawablePropertyColorFormat, nil];
+                                            [NSNumber numberWithBool:retained_backing], kEAGLDrawablePropertyRetainedBacking, kEAGLColorFormatRGB565, kEAGLDrawablePropertyColorFormat, nil];
 
         }
     }
@@ -298,13 +304,35 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
 }
 
 - (void)layoutSubviews {
-    /*
-    [EAGLContext setCurrentContext:_context];
-    [self destroyFramebuffer];
-    [self createFramebuffer];
-    */
+    [super layoutSubviews];
+    [self updateDimensions];
 }
 
+
+- (void) setFrame:(CGRect)frame
+{
+    [super setFrame:frame];
+    [self updateDimensions];
+}
+
+
+- (void) updateDimensions
+{
+    if (_win)
+    {
+        CGRect frame = self.bounds;
+        osg::Vec2 pointOrigin = osg::Vec2(frame.origin.x,frame.origin.y);
+        osg::Vec2 pointSize = osg::Vec2(frame.size.width,frame.size.height);
+        osg::Vec2 pixelOrigin = [(GraphicsWindowIOSGLView*)(self) convertPointToPixel:pointOrigin];
+        osg::Vec2 pixelSize = [(GraphicsWindowIOSGLView*)(self) convertPointToPixel:pointSize];
+        
+        OSG_INFO << "updateDimensions, resize to "
+            <<  pixelOrigin.x() << " " << pixelOrigin.y() << " " 
+            << pixelSize.x() << " " << pixelSize.y() 
+            << std::endl;
+        _win->resized(pixelOrigin.x(), pixelOrigin.y(), pixelSize.x(), pixelSize.y());
+    }
+}
 
 - (BOOL)createFramebuffer {
 
@@ -368,6 +396,12 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
             glRenderbufferStorageOES(GL_RENDERBUFFER_OES, GL_DEPTH_COMPONENT24_OES, _backingWidth, _backingHeight);
         }
 
+#if defined(GL_DEPTH_COMPONENT32_OES)
+        else if(_win->getTraits()->depth == 32){
+            glRenderbufferStorageOES(GL_RENDERBUFFER_OES, GL_DEPTH_COMPONENT32_OES, _backingWidth, _backingHeight);
+        }
+#endif
+
         glFramebufferRenderbufferOES(GL_FRAMEBUFFER_OES, GL_DEPTH_ATTACHMENT_OES, GL_RENDERBUFFER_OES, _depthRenderbuffer);
     }
     
@@ -402,9 +436,14 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
         glGenRenderbuffersOES(1, &_msaaDepthBuffer); 
         glBindRenderbufferOES(GL_RENDERBUFFER_OES, _msaaDepthBuffer);
         
-        glRenderbufferStorageMultisampleAPPLE(GL_RENDERBUFFER_OES, _win->getTraits()->samples, ( _win->getTraits()->depth == 16) ? GL_DEPTH_COMPONENT16_OES : GL_DEPTH_COMPONENT24_OES, _backingWidth , _backingHeight);
+        GLuint attachmentType = (_win->getTraits()->stencil > 0) ? GL_DEPTH24_STENCIL8_OES : ((_win->getTraits()->depth == 16) ? GL_DEPTH_COMPONENT16_OES : GL_DEPTH_COMPONENT24_OES);
+        glRenderbufferStorageMultisampleAPPLE(GL_RENDERBUFFER_OES, _win->getTraits()->samples, attachmentType, _backingWidth , _backingHeight);
+        
         glFramebufferRenderbufferOES(GL_FRAMEBUFFER_OES, GL_DEPTH_ATTACHMENT_OES, GL_RENDERBUFFER_OES, _msaaDepthBuffer);
-    
+        if (_win->getTraits()->stencil > 0) 
+        {
+            glFramebufferRenderbufferOES(GL_FRAMEBUFFER_OES, GL_STENCIL_ATTACHMENT_OES, GL_RENDERBUFFER_OES, _msaaDepthBuffer);
+        }
     }
 #endif
     
@@ -437,17 +476,17 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
     }
     
     if(_stencilBuffer) {
-        glDeleteFramebuffersOES(1, &_stencilBuffer);
+        glDeleteRenderbuffersOES(1, &_stencilBuffer);
         _stencilBuffer = 0;
     }
     
     if(_msaaRenderBuffer) {
-        glDeleteFramebuffersOES(1, &_msaaRenderBuffer);
+        glDeleteRenderbuffersOES(1, &_msaaRenderBuffer);
         _msaaRenderBuffer = 0;
     }
     
     if(_msaaDepthBuffer) {
-        glDeleteFramebuffersOES(1, &_msaaDepthBuffer);
+        glDeleteRenderbuffersOES(1, &_msaaDepthBuffer);
         _msaaDepthBuffer = 0;
     }
 
@@ -537,17 +576,24 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
     {
         
         UITouch *touch = [[allTouches allObjects] objectAtIndex:i];
-        CGPoint pos = [touch locationInView:touch.view];
+        CGPoint pos = [touch locationInView:self];
         osg::Vec2 pixelPos = [self convertPointToPixel: osg::Vec2(pos.x,pos.y)];
-        unsigned int touch_id = [self computeTouchId: touch];
+        unsigned int touch_id = [self computeTouchId: touch mayCleanup: FALSE];
         
-        if (!osg_event) {
+        if (!osg_event)
+        {
             osg_event = _win->getEventQueue()->touchBegan(touch_id, [self convertTouchPhase: [touch phase]], pixelPos.x(), pixelPos.y());
-        } else {
+            osg_event->setMouseYOrientation(osgGA::GUIEventAdapter::Y_INCREASING_DOWNWARDS);
+
+        }
+        else
+        {
             osg_event->addTouchPoint(touch_id, [self convertTouchPhase: [touch phase]], pixelPos.x(), pixelPos.y());
         }
+
     }
     
+    [super touchesBegan:touches withEvent:event];
 }
 
 - (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event {
@@ -559,18 +605,24 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
     for(int i=0; i<[allTouches count]; i++)
     {
         UITouch *touch = [[allTouches allObjects] objectAtIndex:i];
-        CGPoint pos = [touch locationInView:touch.view];
+        CGPoint pos = [touch locationInView:self];
         osg::Vec2 pixelPos = [self convertPointToPixel: osg::Vec2(pos.x,pos.y)];
-        unsigned int touch_id = [self computeTouchId: touch];
+        unsigned int touch_id = [self computeTouchId: touch mayCleanup: FALSE];
 
-        if (!osg_event) {
+        if (!osg_event)
+        {
             osg_event = _win->getEventQueue()->touchMoved(touch_id, [self convertTouchPhase: [touch phase]], pixelPos.x(), pixelPos.y());
-        } else {
+            osg_event->setMouseYOrientation(osgGA::GUIEventAdapter::Y_INCREASING_DOWNWARDS);
+
+        }
+        else
+        {
             osg_event->addTouchPoint(touch_id, [self convertTouchPhase: [touch phase]], pixelPos.x(), pixelPos.y());
         }
 
-
     }
+    
+    [super touchesMoved:touches withEvent:event];    
 }
 
 - (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
@@ -583,16 +635,23 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
     for(int i=0; i<[allTouches count]; i++)
     {
         UITouch *touch = [[allTouches allObjects] objectAtIndex:i];
-        CGPoint pos = [touch locationInView:touch.view];
+        CGPoint pos = [touch locationInView:self];
         osg::Vec2 pixelPos = [self convertPointToPixel: osg::Vec2(pos.x,pos.y)];
-        unsigned int touch_id = [self computeTouchId: touch];
-        if (!osg_event) {
+        unsigned int touch_id = [self computeTouchId: touch mayCleanup: TRUE];
+        if (!osg_event)
+        {
             osg_event = _win->getEventQueue()->touchEnded(touch_id, [self convertTouchPhase: [touch phase]], pixelPos.x(), pixelPos.y(), [touch tapCount]);
-        } else {
+            osg_event->setMouseYOrientation(osgGA::GUIEventAdapter::Y_INCREASING_DOWNWARDS);
+
+        }
+        else
+        {
             osg_event->addTouchPoint(touch_id, [self convertTouchPhase: [touch phase]], pixelPos.x(), pixelPos.y(), [touch tapCount]);
         }
 
     }
+    
+    [super touchesEnded:touches withEvent:event];    
 }
 
 -(void) touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event 
@@ -657,20 +716,7 @@ typedef std::map<void*, unsigned int> TouchPointsIdMapping;
 
 - (void)willAnimateRotationToInterfaceOrientation:(UIInterfaceOrientation)interfaceOrientation duration:(NSTimeInterval)duration 
 {
-    osgViewer::GraphicsWindowIOS* win = [(GraphicsWindowIOSGLView*)(self.view) getGraphicsWindow];
-    if (win) {
-        CGRect frame = self.view.bounds;
-        osg::Vec2 pointOrigin = osg::Vec2(frame.origin.x,frame.origin.y);
-        osg::Vec2 pointSize = osg::Vec2(frame.size.width,frame.size.height);
-        osg::Vec2 pixelOrigin = [(GraphicsWindowIOSGLView*)(self.view) convertPointToPixel:pointOrigin];
-        osg::Vec2 pixelSize = [(GraphicsWindowIOSGLView*)(self.view) convertPointToPixel:pointSize];
-       OSG_INFO << "willAnimateRotationToInterfaceOrientation, resize to " 
-            <<  pixelOrigin.x() << " " << pixelOrigin.y() << " " 
-            << pixelSize.x() << " " << pixelSize.y() 
-            << std::endl;
-        win->resized(pixelOrigin.x(), pixelOrigin.y(), pixelSize.x(), pixelSize.y());
-    }
-
+    [(GraphicsWindowIOSGLView*)(self.view) updateDimensions];
 }
 
 
@@ -706,6 +752,9 @@ void GraphicsWindowIOS::init()
     //if -1.0 we use the screens scale factor
     _viewContentScaleFactor = -1.0f;
     _valid = _initialized = true;
+
+    // make sure the event queue has the correct window rectangle size and input range
+    getEventQueue()->syncWindowRectangleWithGraphcisContext();
 }
 
 
@@ -715,6 +764,8 @@ void GraphicsWindowIOS::init()
 
 bool GraphicsWindowIOS::realizeImplementation()
 {
+    if (_realized) return true;
+    
     NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init];
     
     BOOL bar_hidden = (_traits->windowDecoration) ? NO: YES;
@@ -852,11 +903,14 @@ bool GraphicsWindowIOS::realizeImplementation()
     
     // Attach view to window
     [_window addSubview: _view];
+    if ([_window isKindOfClass:[UIWindow class]])
+        _window.rootViewController = _viewController;
     [theView release];
     
     //if we own the window also make it visible
     if (_ownsWindow) 
     {
+        
         //show window
         [_window makeKeyAndVisible];
     }
@@ -865,6 +919,9 @@ bool GraphicsWindowIOS::realizeImplementation()
     
     // IOSs origin is top/left:
     getEventQueue()->getCurrentEventState()->setMouseYOrientation(osgGA::GUIEventAdapter::Y_INCREASING_DOWNWARDS);
+
+    // make sure the event queue has the correct window rectangle size and input range
+    getEventQueue()->syncWindowRectangleWithGraphcisContext();
     
     _valid = _initialized = _realized = true;
     return _valid;
@@ -1039,10 +1096,10 @@ bool GraphicsWindowIOS::setWindowRectangleImplementation(int x, int y, int width
 }
 
     
-void GraphicsWindowIOS::checkEvents()
+bool GraphicsWindowIOS::checkEvents()
 {
-    
-    
+
+    return !(getEventQueue()->empty());
 }
 
 

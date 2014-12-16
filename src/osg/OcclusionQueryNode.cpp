@@ -37,10 +37,6 @@
 
 #include <OpenThreads/Thread>
 
-
-typedef osg::buffered_value< osg::ref_ptr< osg::Drawable::Extensions > > OcclusionQueryBufferedExtensions;
-static OcclusionQueryBufferedExtensions s_OQ_bufferedExtensions;
-
 //
 // Support classes, used by (and private to) OcclusionQueryNode.
 //   (Note a lot of this is historical. OcclusionQueryNode formaerly
@@ -104,7 +100,7 @@ struct RetrieveQueriesCallback : public osg::Camera::DrawCallback
     typedef std::vector<osg::TestResult*> ResultsVector;
     ResultsVector _results;
 
-    RetrieveQueriesCallback( osg::Drawable::Extensions* ext=NULL )
+    RetrieveQueriesCallback( osg::GLExtensions* ext=NULL )
       : _extensionsFallback( ext )
     {
     }
@@ -122,26 +118,24 @@ struct RetrieveQueriesCallback : public osg::Camera::DrawCallback
         double elapsedTime( 0. );
         int count( 0 );
 
-        osg::Drawable::Extensions* ext;
+        const osg::GLExtensions* ext=0;
         if (camera.getGraphicsContext())
         {
             // The typical path, for osgViewer-based applications or any
             //   app that has set up a valid GraphicsCOntext for the Camera.
-            unsigned int contextID = camera.getGraphicsContext()->getState()->getContextID();
-            RetrieveQueriesCallback* const_this = const_cast<RetrieveQueriesCallback*>( this );
-            ext = const_this->getExtensions( contextID, true );
+            ext = camera.getGraphicsContext()->getState()->get<osg::GLExtensions>();
         }
         else
         {
             // No valid GraphicsContext in the Camera. This might happen in
             //   SceneView-based apps. Rely on the creating code to have passed
-            //   in a valid Extensions pointer, and hope it's valid for any
+            //   in a valid GLExtensions pointer, and hope it's valid for any
             //   context that might be current.
-            OSG_DEBUG << "osgOQ: RQCB: Using fallback path to obtain Extensions pointer." << std::endl;
+            OSG_DEBUG << "osgOQ: RQCB: Using fallback path to obtain GLExtensions pointer." << std::endl;
             ext = _extensionsFallback;
             if (!ext)
             {
-                OSG_FATAL << "osgOQ: RQCB: Extensions pointer fallback is NULL." << std::endl;
+                OSG_FATAL << "osgOQ: RQCB: GLExtensions pointer fallback is NULL." << std::endl;
                 return;
             }
         }
@@ -210,15 +204,7 @@ struct RetrieveQueriesCallback : public osg::Camera::DrawCallback
         _results.push_back( tr );
     }
 
-    osg::Drawable::Extensions* getExtensions( unsigned int contextID, bool createIfNotInitalized )
-    {
-        if (!s_OQ_bufferedExtensions[ contextID ] && createIfNotInitalized)
-            s_OQ_bufferedExtensions[ contextID ] = new osg::Drawable::Extensions( contextID );
-        return s_OQ_bufferedExtensions[ contextID ].get();
-    }
-
-
-    osg::Drawable::Extensions* _extensionsFallback;
+    osg::GLExtensions* _extensionsFallback;
 };
 
 
@@ -293,7 +279,7 @@ void
 QueryGeometry::drawImplementation( osg::RenderInfo& renderInfo ) const
 {
     unsigned int contextID = renderInfo.getState()->getContextID();
-    osg::Drawable::Extensions* ext = getExtensions( contextID, true );
+    osg::GLExtensions* ext = renderInfo.getState()->get<GLExtensions>();
     osg::Camera* cam = renderInfo.getCurrentCamera();
 
     // Add callbacks if necessary.
@@ -426,7 +412,7 @@ QueryGeometry::flushDeletedQueryObjects( unsigned int contextID, double /*curren
     {
         OpenThreads::ScopedLock<OpenThreads::Mutex> lock(s_mutex_deletedQueryObjectCache);
 
-        const osg::Drawable::Extensions* extensions = getExtensions( contextID, true );
+        const osg::GLExtensions* extensions = osg::GLExtensions::Get( contextID, true );
 
         QueryObjectList& qol = s_deletedQueryObjectCache[contextID];
 
@@ -715,8 +701,7 @@ void OcclusionQueryNode::createSupportNodes()
 
         ref_ptr<Vec4Array> ca = new Vec4Array;
         ca->push_back( Vec4( 1.f, 1.f, 1.f, 1.f ) );
-        geom->setColorArray( ca.get() );
-        geom->setColorBinding( Geometry::BIND_OVERALL );
+        geom->setColorArray( ca.get(), Array::BIND_OVERALL );
 
         geom->addPrimitiveSet( new DrawElementsUShort( PrimitiveSet::QUADS, 24, indices ) );
 

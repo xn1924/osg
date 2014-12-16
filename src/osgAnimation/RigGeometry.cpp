@@ -16,48 +16,38 @@
 #include <osgAnimation/RigGeometry>
 #include <osgAnimation/RigTransformSoftware>
 #include <sstream>
-#include <osg/GL2Extensions>
 
 using namespace osgAnimation;
 
 // The idea is to compute a bounding box with a factor x of the first step we compute the bounding box
-class RigComputeBoundingBoxCallback : public osg::Drawable::ComputeBoundingBoxCallback
+osg::BoundingBox RigComputeBoundingBoxCallback::computeBound(const osg::Drawable& drawable) const
 {
-public:
-    RigComputeBoundingBoxCallback(double factor = 2.0) : _computed(false), _factor(factor) {}
-    void reset() { _computed = false; }
-    virtual osg::BoundingBox computeBound(const osg::Drawable& drawable) const
-    {
-        const osgAnimation::RigGeometry& rig = dynamic_cast<const osgAnimation::RigGeometry&>(drawable);
+    const osgAnimation::RigGeometry& rig = dynamic_cast<const osgAnimation::RigGeometry&>(drawable);
 
-        // if a valid inital bounding box is set we use it without asking more
-        if (rig.getInitialBound().valid())
-            return rig.getInitialBound();
+    // if a valid inital bounding box is set we use it without asking more
+    if (rig.getInitialBound().valid())
+        return rig.getInitialBound();
 
-        if (_computed)
-            return _boundingBox;
-
-        // if the computing of bb is invalid (like no geometry inside)
-        // then dont tag the bounding box as computed
-        osg::BoundingBox bb = rig.computeBound();
-        if (!bb.valid())
-            return bb;
-
-
-        _boundingBox.expandBy(bb);
-        osg::Vec3 center = _boundingBox.center();
-        osg::Vec3 vec = (_boundingBox._max-center)*_factor;
-        _boundingBox.expandBy(center + vec);
-        _boundingBox.expandBy(center - vec);
-        _computed = true;
-//        OSG_NOTICE << "build the bounding box for RigGeometry " << rig.getName() << " " << _boundingBox._min << " " << _boundingBox._max << std::endl;
+    if (_computed)
         return _boundingBox;
-    }
-protected:
-    mutable bool _computed;
-    double _factor;
-    mutable osg::BoundingBox _boundingBox;
-};
+
+    // if the computing of bb is invalid (like no geometry inside)
+    // then dont tag the bounding box as computed
+    osg::BoundingBox bb = rig.computeBoundingBox();
+    if (!bb.valid())
+        return bb;
+
+
+    _boundingBox.expandBy(bb);
+    osg::Vec3 center = _boundingBox.center();
+    osg::Vec3 vec = (_boundingBox._max-center)*_factor;
+    _boundingBox.expandBy(center + vec);
+    _boundingBox.expandBy(center - vec);
+    _computed = true;
+//        OSG_NOTICE << "build the bounding box for RigGeometry " << rig.getName() << " " << _boundingBox._min << " " << _boundingBox._max << std::endl;
+    return _boundingBox;
+}
+
 
 RigGeometry::RigGeometry()
 {
@@ -109,7 +99,7 @@ void RigGeometry::buildVertexInfluenceSet()
 
     _vertexInfluenceSet.buildVertex2BoneList();
     _vertexInfluenceSet.buildUniqVertexSetToBoneSetList();
-    OSG_NOTICE << "uniq groups " << _vertexInfluenceSet.getUniqVertexSetToBoneSetList().size() << " for " << getName() << std::endl;
+    OSG_DEBUG << "uniq groups " << _vertexInfluenceSet.getUniqVertexSetToBoneSetList().size() << " for " << getName() << std::endl;
 }
 
 void RigGeometry::computeMatrixFromRootSkeleton()
@@ -153,25 +143,21 @@ void RigGeometry::copyFrom(osg::Geometry& from)
         if (!copyToSelf) target.setVertexArray(from.getVertexArray());
     }
 
-    target.setNormalBinding(from.getNormalBinding());
     if (from.getNormalArray())
     {
         if (!copyToSelf) target.setNormalArray(from.getNormalArray());
     }
 
-    target.setColorBinding(from.getColorBinding());
     if (from.getColorArray())
     {
         if (!copyToSelf) target.setColorArray(from.getColorArray());
     }
 
-    target.setSecondaryColorBinding(from.getSecondaryColorBinding());
     if (from.getSecondaryColorArray())
     {
         if (!copyToSelf) target.setSecondaryColorArray(from.getSecondaryColorArray());
     }
 
-    target.setFogCoordBinding(from.getFogCoordBinding());
     if (from.getFogCoordArray())
     {
         if (!copyToSelf) target.setFogCoordArray(from.getFogCoordArray());
@@ -185,13 +171,13 @@ void RigGeometry::copyFrom(osg::Geometry& from)
         }
     }
 
-    ArrayDataList& arrayList = from.getVertexAttribArrayList();
+    osg::Geometry::ArrayList& arrayList = from.getVertexAttribArrayList();
     for(unsigned int vi=0;vi< arrayList.size();++vi)
     {
-        ArrayData& arrayData = arrayList[vi];
-        if (arrayData.array.valid())
+        osg::Array* array = arrayList[vi].get();
+        if (array)
         {
-            if (!copyToSelf) target.setVertexAttribData(vi,arrayData);
+            if (!copyToSelf) target.setVertexAttribArray(vi,array);
         }
     }
 }

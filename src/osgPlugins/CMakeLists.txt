@@ -163,8 +163,7 @@ ADD_SUBDIRECTORY(bvh)
 ADD_SUBDIRECTORY(x)
 ADD_SUBDIRECTORY(dxf)
 ADD_SUBDIRECTORY(OpenFlight)
-# ADD_SUBDIRECTORY(flt)
-ADD_SUBDIRECTORY(geo)
+
 ADD_SUBDIRECTORY(obj)
 
 ADD_SUBDIRECTORY(pic)
@@ -255,6 +254,44 @@ IF(LIBVNCSERVER_FOUND)
 ENDIF()
 
 ADD_SUBDIRECTORY(pvr)
+
+ADD_SUBDIRECTORY(osc)
+ADD_SUBDIRECTORY(trk)
+ADD_SUBDIRECTORY(tf)
+
+
+####################################################
+#
+# ScriptEngines
+#
+IF ((LUA_LIBRARIES AND LUA_INCLUDE_DIR) OR (LUA_SOURCE_DIR AND LUA_INCLUDE_DIR) OR (OSG_USE_LOCAL_LUA_SOURCE))
+    ADD_SUBDIRECTORY(lua)
+ENDIF()
+
+IF (V8_FOUND)
+    ADD_SUBDIRECTORY(V8)
+ENDIF()
+
+IF (PYTHONLIBS_FOUND)
+    ADD_SUBDIRECTORY(python)
+ENDIF()
+
+####################################################
+#
+# Device integration plugins
+#
+IF   (SDL_FOUND)
+    ADD_SUBDIRECTORY(sdl)
+ENDIF(SDL_FOUND)
+
+IF(ASIO_FOUND)
+    ADD_SUBDIRECTORY(RestHttpDevice)
+ENDIF(ASIO_FOUND)
+
+
+IF(ZEROCONF_FOUND)
+    ADD_SUBDIRECTORY(ZeroConfDevice)
+ENDIF()
 
 ##########to get all the variables of Cmake
 #GET_CMAKE_PROPERTY(MYVARS VARIABLES)

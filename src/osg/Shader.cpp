@@ -108,7 +108,8 @@ ShaderBinary::ShaderBinary()
 {
 }
 
-ShaderBinary::ShaderBinary(const ShaderBinary& rhs, const osg::CopyOp&):
+ShaderBinary::ShaderBinary(const ShaderBinary& rhs, const osg::CopyOp& copyop):
+    osg::Object(rhs, copyop),
     _data(rhs._data)
 {
 }
@@ -176,8 +177,8 @@ void Shader::flushDeletedGlShaders(unsigned int contextID,double /*currentTime*/
     // if no time available don't try to flush objects.
     if (availableTime<=0.0) return;
 
-    const GL2Extensions* extensions = GL2Extensions::Get(contextID,true);
-    if( ! extensions->isGlslSupported() ) return;
+    const GLExtensions* extensions = GLExtensions::Get(contextID,true);
+    if( ! extensions->isGlslSupported ) return;
 
     const osg::Timer& timer = *osg::Timer::instance();
     osg::Timer_t start_tick = timer.tick();
@@ -330,6 +331,7 @@ const char* Shader::getTypename() const
         case TESSEVALUATION: return "TESSEVALUATION";
         case GEOMETRY:  return "GEOMETRY";
         case FRAGMENT:  return "FRAGMENT";
+        case COMPUTE:  return "COMPUTE";
         default:        return "UNDEFINED";
     }
 }
@@ -342,6 +344,7 @@ Shader::Type Shader::getTypeId( const std::string& tname )
     if( tname == "TESSEVALUATION") return TESSEVALUATION;
     if( tname == "GEOMETRY" )   return GEOMETRY;
     if( tname == "FRAGMENT" )   return FRAGMENT;
+    if( tname == "COMPUTE" )   return COMPUTE;
     return UNDEFINED;
 }
 
@@ -455,7 +458,7 @@ Shader::PerContextShader::PerContextShader(const Shader* shader, unsigned int co
         _contextID( contextID )
 {
     _shader = shader;
-    _extensions = GL2Extensions::Get( _contextID, true );
+    _extensions = GLExtensions::Get( _contextID, true );
     _glShaderHandle = _extensions->glCreateShader( shader->getType() );
     requestCompile();
 }
@@ -565,10 +568,10 @@ void Shader::PerContextShader::compileShader(osg::State& state)
         state.convertVertexShaderSourceToOsgBuiltIns(source);
     }
 
-    std::string sourceWithLineNumbers = insertLineNumbers(source);
 
     if (osg::getNotifyLevel()>=osg::INFO)
     {
+        std::string sourceWithLineNumbers = insertLineNumbers(source);
         OSG_INFO << "\nCompiling " << _shader->getTypename()
                  << " source:\n" << sourceWithLineNumbers << std::endl;
     }

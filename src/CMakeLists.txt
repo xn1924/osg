@@ -7,15 +7,15 @@ IF(MSVC80 OR MSVC90)
 ENDIF()
 
 #the old construct SUBDIRS( was substituded by ADD_SUBDIRECTORY that is to be preferred according on CMake docs.
-FOREACH( mylibfolder 
+FOREACH( mylibfolder
         OpenThreads
         osg
-        osgDB 
-        osgUtil 
-        osgGA 
-        osgText 
+        osgDB
+        osgUtil
+        osgGA
+        osgText
         osgViewer
-        osgAnimation 
+        osgAnimation
         osgFX
         osgManipulator
         osgParticle
@@ -24,6 +24,7 @@ FOREACH( mylibfolder
         osgSim
         osgTerrain
         osgWidget
+        osgUI
         osgVolume
         osgWrappers/serializers
         osgWrappers/deprecated-dotosg
@@ -34,11 +35,8 @@ FOREACH( mylibfolder
 
 ENDFOREACH()
 
-IF (QT4_FOUND AND NOT ANDROID)
+IF ((QT4_FOUND OR Qt5Widgets_FOUND) AND NOT ANDROID)
     ADD_SUBDIRECTORY(osgQt)
 ENDIF()
 
-IF(ANDROID)
-    configure_file("${OSG_ANDROID_TEMPLATES}/Android.mk.src.in" "${CMAKE_CURRENT_BINARY_DIR}/Android.mk")
-ENDIF()
 

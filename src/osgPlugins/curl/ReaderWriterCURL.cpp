@@ -375,7 +375,11 @@ osgDB::ReaderWriter::ReadResult EasyCurl::processResponse(CURLcode res, const st
 ReaderWriterCURL::ReaderWriterCURL()
 {
     supportsProtocol("http","Read from http port using libcurl.");
-    supportsExtension("curl","Psuedo file extension, used to select curl plugin.");
+    supportsProtocol("https","Read from https port using libcurl.");
+    supportsProtocol("ftp","Read from ftp port using libcurl.");
+    supportsProtocol("ftps","Read from ftps port using libcurl.");
+    
+    supportsExtension("curl","Pseudo file extension, used to select curl plugin.");
     supportsExtension("*","Passes all read files to other plugins to handle actual model loading.");
     supportsOption("OSG_CURL_PROXY","Specify the http proxy.");
     supportsOption("OSG_CURL_PROXYPORT","Specify the http proxy port.");
@@ -702,14 +706,33 @@ bool ReaderWriterCURL::read(std::istream& fin, std::string& destination) const
 }
 #endif
 
+size_t empty_write_data(const char *buffer, size_t size, size_t nmemb, char
+*userp)
+{
+    return size*nmemb;
+}
+
 bool ReaderWriterCURL::fileExists(const std::string& filename, const osgDB::Options* options) const
 {
     if (osgDB::containsServerAddress(filename))
     {
+        std::string data;
         OSG_NOTICE<<"Checking if file exists using curl plugin: "<<filename<<std::endl;
+        CURL* curl_handle = curl_easy_init();
+        curl_easy_setopt(curl_handle, CURLOPT_URL, filename.c_str());
+        curl_easy_setopt(curl_handle, CURLOPT_NOBODY, 1);
+        curl_easy_setopt(curl_handle, CURLOPT_HEADER, 1);
+        curl_easy_setopt(curl_handle, CURLOPT_FILETIME, 1);
+        curl_easy_setopt(curl_handle, CURLOPT_WRITEFUNCTION, &empty_write_data);
 
-        ReadResult result = readFile(OBJECT,filename,options);
-        return result.status()==osgDB::ReaderWriter::ReadResult::FILE_LOADED;
+        int result = curl_easy_perform(curl_handle);
+        
+        long http_return_code(0);
+        curl_easy_getinfo(curl_handle, CURLINFO_RESPONSE_CODE, &http_return_code);
+        
+        curl_easy_cleanup(curl_handle);
+        
+        return ((result == 0) && ((http_return_code == 200) || (http_return_code == 0)));
     }
     else
     {

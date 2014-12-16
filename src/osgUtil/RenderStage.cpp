@@ -338,8 +338,8 @@ void RenderStage::runCameraSetUp(osg::RenderInfo& renderInfo)
 
     if (renderTargetImplementation==osg::Camera::FRAME_BUFFER_OBJECT)
     {
-        osg::FBOExtensions* fbo_ext = osg::FBOExtensions::instance(state.getContextID(),true);
-        bool fbo_supported = fbo_ext && fbo_ext->isSupported();
+        osg::GLExtensions* ext = state.get<osg::GLExtensions>();
+        bool fbo_supported = ext->isFrameBufferObjectSupported;
 
         if (fbo_supported)
         {
@@ -362,7 +362,7 @@ void RenderStage::runCameraSetUp(osg::RenderInfo& renderInfo)
             unsigned int renderBuffersMask = _camera->getImplicitBufferAttachmentRenderMask(true);
             unsigned int resolveBuffersMask = _camera->getImplicitBufferAttachmentRenderMask(true);
 
-            if (fbo_ext->isMultisampleSupported())
+            if (ext->isRenderbufferMultisampleSupported())
             {
                 for(osg::Camera::BufferAttachmentMap::iterator itr = bufferAttachments.begin();
                     itr != bufferAttachments.end();
@@ -518,7 +518,7 @@ void RenderStage::runCameraSetUp(osg::RenderInfo& renderInfo)
                 #endif
             }
 
-            GLenum status = fbo_ext->glCheckFramebufferStatus(GL_FRAMEBUFFER_EXT);
+            GLenum status = ext->glCheckFramebufferStatus(GL_FRAMEBUFFER_EXT);
 
             if (status != GL_FRAMEBUFFER_COMPLETE_EXT)
             {
@@ -526,7 +526,7 @@ void RenderStage::runCameraSetUp(osg::RenderInfo& renderInfo)
 
                 fbo_supported = false;
                 GLuint fboId = state.getGraphicsContext() ? state.getGraphicsContext()->getDefaultFboId() : 0;
-                fbo_ext->glBindFramebuffer(GL_FRAMEBUFFER_EXT, fboId);
+                ext->glBindFramebuffer(GL_FRAMEBUFFER_EXT, fboId);
                 fbo = 0;
 
                 // clean up.
@@ -548,7 +548,7 @@ void RenderStage::runCameraSetUp(osg::RenderInfo& renderInfo)
                 {
                     fbo_multisample->apply(state);
 
-                    GLenum status = fbo_ext->glCheckFramebufferStatus(GL_FRAMEBUFFER_EXT);
+                    GLenum status = ext->glCheckFramebufferStatus(GL_FRAMEBUFFER_EXT);
 
                     if (status != GL_FRAMEBUFFER_COMPLETE_EXT)
                     {
@@ -903,8 +903,8 @@ void RenderStage::drawInner(osg::RenderInfo& renderInfo,RenderLeaf*& previous, b
 
     osg::State& state = *renderInfo.getState();
 
-    osg::FBOExtensions* fbo_ext = _fbo.valid() ? osg::FBOExtensions::instance(state.getContextID(),true) : 0;
-    bool fbo_supported = fbo_ext && fbo_ext->isSupported();
+    osg::GLExtensions* ext = _fbo.valid() ? state.get<osg::GLExtensions>() : 0;
+    bool fbo_supported = ext && ext->isFrameBufferObjectSupported;
 
     bool using_multiple_render_targets = fbo_supported && _fbo->hasMultipleRenderingTargets();
 
@@ -934,9 +934,9 @@ void RenderStage::drawInner(osg::RenderInfo& renderInfo,RenderLeaf*& previous, b
     {
         if (state.checkGLErrors("after RenderBin::draw(..)"))
         {
-            if ( fbo_ext )
+            if ( ext )
             {
-                GLenum fbstatus = fbo_ext->glCheckFramebufferStatus(GL_FRAMEBUFFER_EXT);
+                GLenum fbstatus = ext->glCheckFramebufferStatus(GL_FRAMEBUFFER_EXT);
                 if ( fbstatus != GL_FRAMEBUFFER_COMPLETE_EXT )
                 {
                     OSG_NOTICE<<"RenderStage::drawInner(,) FBO status = 0x"<<std::hex<<fbstatus<<std::dec<<std::endl;
@@ -948,7 +948,7 @@ void RenderStage::drawInner(osg::RenderInfo& renderInfo,RenderLeaf*& previous, b
     const FrameBufferObject* read_fbo = fbo_supported ? _fbo.get() : 0;
     bool apply_read_fbo = false;
 
-    if (fbo_supported && _resolveFbo.valid() && fbo_ext->glBlitFramebuffer)
+    if (fbo_supported && _resolveFbo.valid() && ext->glBlitFramebuffer)
     {
         GLbitfield blitMask = 0;
         bool needToBlitColorBuffers = false;
@@ -988,9 +988,11 @@ void RenderStage::drawInner(osg::RenderInfo& renderInfo,RenderLeaf*& previous, b
             // Note that (with nvidia 175.16 windows drivers at least) if the read
             // framebuffer is multisampled then the dimension arguments are ignored
             // and the whole framebuffer is always copied.
-            fbo_ext->glBlitFramebuffer(
-                0, 0, static_cast<GLint>(_viewport->width()), static_cast<GLint>(_viewport->height()),
-                0, 0, static_cast<GLint>(_viewport->width()), static_cast<GLint>(_viewport->height()),
+            ext->glBlitFramebuffer(
+                static_cast<GLint>(_viewport->x()), static_cast<GLint>(_viewport->y()),
+                static_cast<GLint>(_viewport->x() + _viewport->width()), static_cast<GLint>(_viewport->y() + _viewport->height()),
+                static_cast<GLint>(_viewport->x()), static_cast<GLint>(_viewport->y()),
+                static_cast<GLint>(_viewport->x() + _viewport->width()), static_cast<GLint>(_viewport->y() + _viewport->height()),
                 blitMask, GL_NEAREST);
         }
 
@@ -1007,9 +1009,11 @@ void RenderStage::drawInner(osg::RenderInfo& renderInfo,RenderLeaf*& previous, b
                     glReadBuffer(GL_COLOR_ATTACHMENT0_EXT + (attachment - osg::Camera::COLOR_BUFFER0));
                     glDrawBuffer(GL_COLOR_ATTACHMENT0_EXT + (attachment - osg::Camera::COLOR_BUFFER0));
 
-                    fbo_ext->glBlitFramebuffer(
-                        0, 0, static_cast<GLint>(_viewport->width()), static_cast<GLint>(_viewport->height()),
-                        0, 0, static_cast<GLint>(_viewport->width()), static_cast<GLint>(_viewport->height()),
+                    ext->glBlitFramebuffer(
+                        static_cast<GLint>(_viewport->x()), static_cast<GLint>(_viewport->y()),
+                        static_cast<GLint>(_viewport->x() + _viewport->width()), static_cast<GLint>(_viewport->y() + _viewport->height()),
+                        static_cast<GLint>(_viewport->x()), static_cast<GLint>(_viewport->y()),
+                        static_cast<GLint>(_viewport->x() + _viewport->width()), static_cast<GLint>(_viewport->y() + _viewport->height()),
                         GL_COLOR_BUFFER_BIT, GL_NEAREST);
                 }
             }
@@ -1084,13 +1088,13 @@ void RenderStage::drawInner(osg::RenderInfo& renderInfo,RenderLeaf*& previous, b
         {
             // switch off the frame buffer object
             GLuint fboId = state.getGraphicsContext() ? state.getGraphicsContext()->getDefaultFboId() : 0;
-            fbo_ext->glBindFramebuffer(GL_FRAMEBUFFER_EXT, fboId);
+            ext->glBindFramebuffer(GL_FRAMEBUFFER_EXT, fboId);
         }
 
         doCopyTexture = true;
     }
 
-    if (fbo_supported && _camera)
+    if (fbo_supported && _camera.valid())
     {
         // now generate mipmaps if they are required.
         const osg::Camera::BufferAttachmentMap& bufferAttachments = _camera->getBufferAttachmentMap();
@@ -1102,7 +1106,7 @@ void RenderStage::drawInner(osg::RenderInfo& renderInfo,RenderLeaf*& previous, b
             {
                 state.setActiveTextureUnit(0);
                 state.applyTextureAttribute(0, itr->second._texture.get());
-                fbo_ext->glGenerateMipmap(itr->second._texture->getTextureTarget());
+                ext->glGenerateMipmap(itr->second._texture->getTextureTarget());
             }
         }
     }
@@ -1142,11 +1146,11 @@ void RenderStage::draw(osg::RenderInfo& renderInfo,RenderLeaf*& previous)
     if(_initialViewMatrix.valid()) renderInfo.getState()->setInitialViewMatrix(_initialViewMatrix.get());
 
     // push the stages camera so that drawing code can query it
-    if (_camera) renderInfo.pushCamera(_camera);
+    if (_camera.valid()) renderInfo.pushCamera(_camera.get());
 
     _stageDrawnThisFrame = true;
 
-    if (_camera && _camera->getInitialDrawCallback())
+    if (_camera.valid() && _camera->getInitialDrawCallback())
     {
         // if we have a camera with a intial draw callback invoke it.
         (*(_camera->getInitialDrawCallback()))(renderInfo);
@@ -1202,7 +1206,7 @@ void RenderStage::draw(osg::RenderInfo& renderInfo,RenderLeaf*& previous)
 
     unsigned int originalStackSize = useState->getStateSetStackSize();
 
-    if (_camera && _camera->getPreDrawCallback())
+    if (_camera.valid() && _camera->getPreDrawCallback())
     {
         // if we have a camera with a pre draw callback invoke it.
         (*(_camera->getPreDrawCallback()))(renderInfo);
@@ -1263,7 +1267,7 @@ void RenderStage::draw(osg::RenderInfo& renderInfo,RenderLeaf*& previous)
         copyTexture(renderInfo);
     }
 
-    if (_camera && _camera->getPostDrawCallback())
+    if (_camera.valid() && _camera->getPostDrawCallback())
     {
         // if we have a camera with a post draw callback invoke it.
         (*(_camera->getPostDrawCallback()))(renderInfo);
@@ -1301,14 +1305,14 @@ void RenderStage::draw(osg::RenderInfo& renderInfo,RenderLeaf*& previous)
     // render all the post draw callbacks
     drawPostRenderStages(renderInfo,previous);
 
-    if (_camera && _camera->getFinalDrawCallback())
+    if (_camera.valid() && _camera->getFinalDrawCallback())
     {
         // if we have a camera with a final callback invoke it.
         (*(_camera->getFinalDrawCallback()))(renderInfo);
     }
 
     // pop the render stages camera.
-    if (_camera) renderInfo.popCamera();
+    if (_camera.valid()) renderInfo.popCamera();
 }
 
 void RenderStage::drawImplementation(osg::RenderInfo& renderInfo,RenderLeaf*& previous)

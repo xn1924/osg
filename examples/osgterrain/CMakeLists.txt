@@ -1,4 +1,6 @@
-SET(TARGET_SRC osgterrain.cpp)
+SET(TARGET_SRC
+    osgterrain.cpp
+)
 
 SET(TARGET_ADDED_LIBRARIES osgTerrain )
 

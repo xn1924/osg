@@ -826,6 +826,9 @@ void DrawShapeVisitor::apply(const Capsule& capsule)
             numRows = MIN_NUM_ROWS;
     }
 
+    // if numRows is odd the top and bottom halves of sphere won't match, so bump up to the next event numRows
+    if ((numRows%2)!=0) ++numRows;
+
 
     // capsule cylindrical body
     if (createBody)
@@ -1818,6 +1821,9 @@ void PrimitiveShapeVisitor::apply(const Capsule& capsule)
             numSegments = MIN_NUM_SEGMENTS;
     }
 
+    // if numRows is odd the top and bottom halves of sphere won't match, so bump up to the next event numRows
+    if ((numRows%2)!=0) ++numRows;
+
     // capsule body
     if (createBody)
         createCylinderBody(numSegments, capsule.getRadius(), capsule.getHeight(), matrix);
@@ -1981,7 +1987,7 @@ void ShapeDrawable::accept(PrimitiveFunctor& pf) const
 }
 
 
-BoundingBox ShapeDrawable::computeBound() const
+BoundingBox ShapeDrawable::computeBoundingBox() const
 {
     BoundingBox bbox;
     if (_shape.valid())

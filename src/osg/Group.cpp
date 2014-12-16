@@ -15,6 +15,7 @@
 #include <osg/BoundingBox>
 #include <osg/Transform>
 #include <osg/OccluderNode>
+#include <osg/Geometry>
 #include <osg/Notify>
 
 #include <stdio.h>
@@ -83,9 +84,15 @@ bool Group::insertChild( unsigned int index, Node *child )
 
     if (child)
     {
+        // handle deprecated geometry configurations by calling fixDeprecatedData().
+        osg::Geometry* geometry = child->asGeometry();
+        if (geometry && geometry->containsDeprecatedData()) geometry->fixDeprecatedData();
+
+
         // note ref_ptr<> automatically handles incrementing child's reference count.
         if (index >= _children.size())
         {
+            index = _children.size();      // set correct index value to be passed to the "childInserted" method
             _children.push_back(child);
         }
         else
@@ -143,6 +150,20 @@ bool Group::insertChild( unsigned int index, Node *child )
     }
     else return false;
 }
+
+unsigned int Group::getNumChildren() const
+{
+    return static_cast<unsigned int>(_children.size());
+}
+
+
+bool Group::removeChild( Node *child )
+{
+    unsigned int pos = getChildIndex(child);
+    if (pos<_children.size()) return removeChildren(pos,1);
+    else return false;
+}
+
 
 bool Group::removeChildren(unsigned int pos,unsigned int numChildrenToRemove)
 {
@@ -351,10 +372,20 @@ BoundingSphere Group::computeBound() const
         itr!=_children.end();
         ++itr)
     {
-        const osg::Transform* transform = (*itr)->asTransform();
+        osg::Node* child = itr->get();
+        const osg::Transform* transform = child->asTransform();
         if (!transform || transform->getReferenceFrame()==osg::Transform::RELATIVE_RF)
         {
-            bb.expandBy((*itr)->getBound());
+            osg::Drawable* drawable = child->asDrawable();
+            if (drawable)
+            {
+                bb.expandBy(drawable->getBoundingBox());
+            }
+            else
+            {
+                const osg::BoundingSphere& bs = child->getBound();
+                bb.expandBy(bs);
+            }
         }
     }
 
@@ -369,10 +400,12 @@ BoundingSphere Group::computeBound() const
         itr!=_children.end();
         ++itr)
     {
-        const osg::Transform* transform = (*itr)->asTransform();
+        osg::Node* child = itr->get();
+        const osg::Transform* transform = child->asTransform();
         if (!transform || transform->getReferenceFrame()==osg::Transform::RELATIVE_RF)
         {
-            bsphere.expandRadiusBy((*itr)->getBound());
+            const BoundingSphere& bs = child->getBound();
+            bsphere.expandRadiusBy(bs);
         }
     }
 

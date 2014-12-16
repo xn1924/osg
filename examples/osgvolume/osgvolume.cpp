@@ -49,6 +49,7 @@
 #include <osgGA/TrackballManipulator>
 #include <osgGA/FlightManipulator>
 #include <osgGA/KeySwitchMatrixManipulator>
+#include <osgGA/StateSetManipulator>
 
 #include <osgUtil/CullVisitor>
 
@@ -69,6 +70,8 @@
 #include <osgVolume/VolumeTile>
 #include <osgVolume/RayTracedTechnique>
 #include <osgVolume/FixedFunctionTechnique>
+#include <osgVolume/MultipassTechnique>
+#include <osgVolume/VolumeScene>
 
 enum ShadingModel
 {
@@ -115,18 +118,6 @@ osg::Image* createTexture3D(osg::ImageList& imageList,
     }
 }
 
-struct ModulateAlphaByLuminanceOperator
-{
-    ModulateAlphaByLuminanceOperator() {}
-
-    inline void luminance(float&) const {}
-    inline void alpha(float&) const {}
-    inline void luminance_alpha(float& l,float& a) const { a*= l; }
-    inline void rgb(float&,float&,float&) const {}
-    inline void rgba(float& r,float& g,float& b,float& a) const { float l = (r+g+b)*0.3333333; a *= l;}
-};
-
-
 struct ScaleOperator
 {
     ScaleOperator():_scale(1.0f) {}
@@ -144,7 +135,7 @@ struct ScaleOperator
     inline void rgba(float& r,float& g,float& b,float& a) const { r*= _scale; g*=_scale; b*=_scale; a*=_scale; }
 };
 
-struct RecordRowOperator
+struct RecordRowOperator : public osg::CastAndScaleToFloatOperation
 {
     RecordRowOperator(unsigned int num):_colours(num),_pos(0) {}
 
@@ -310,114 +301,6 @@ osg::Image* readRaw(int sizeX, int sizeY, int sizeZ, int numberBytesPerComponent
 
 }
 
-enum ColourSpaceOperation
-{
-    NO_COLOUR_SPACE_OPERATION,
-    MODULATE_ALPHA_BY_LUMINANCE,
-    MODULATE_ALPHA_BY_COLOUR,
-    REPLACE_ALPHA_WITH_LUMINANCE,
-    REPLACE_RGB_WITH_LUMINANCE
-};
-
-struct ModulateAlphaByColourOperator
-{
-    ModulateAlphaByColourOperator(const osg::Vec4& colour):_colour(colour) { _lum = _colour.length(); }
-
-    osg::Vec4 _colour;
-    float _lum;
-
-    inline void luminance(float&) const {}
-    inline void alpha(float&) const {}
-    inline void luminance_alpha(float& l,float& a) const { a*= l*_lum; }
-    inline void rgb(float&,float&,float&) const {}
-    inline void rgba(float& r,float& g,float& b,float& a) const { a = (r*_colour.r()+g*_colour.g()+b*_colour.b()+a*_colour.a()); }
-};
-
-struct ReplaceAlphaWithLuminanceOperator
-{
-    ReplaceAlphaWithLuminanceOperator() {}
-
-    inline void luminance(float&) const {}
-    inline void alpha(float&) const {}
-    inline void luminance_alpha(float& l,float& a) const { a= l; }
-    inline void rgb(float&,float&,float&) const { }
-    inline void rgba(float& r,float& g,float& b,float& a) const { float l = (r+g+b)*0.3333333; a = l; }
-};
-
-osg::Image* doColourSpaceConversion(ColourSpaceOperation op, osg::Image* image, osg::Vec4& colour)
-{
-    switch(op)
-    {
-        case (MODULATE_ALPHA_BY_LUMINANCE):
-        {
-            std::cout<<"doing conversion MODULATE_ALPHA_BY_LUMINANCE"<<std::endl;
-            osg::modifyImage(image,ModulateAlphaByLuminanceOperator());
-            return image;
-        }
-        case (MODULATE_ALPHA_BY_COLOUR):
-        {
-            std::cout<<"doing conversion MODULATE_ALPHA_BY_COLOUR"<<std::endl;
-            osg::modifyImage(image,ModulateAlphaByColourOperator(colour));
-            return image;
-        }
-        case (REPLACE_ALPHA_WITH_LUMINANCE):
-        {
-            std::cout<<"doing conversion REPLACE_ALPHA_WITH_LUMINANCE"<<std::endl;
-            osg::modifyImage(image,ReplaceAlphaWithLuminanceOperator());
-            return image;
-        }
-        case (REPLACE_RGB_WITH_LUMINANCE):
-        {
-            std::cout<<"doing conversion REPLACE_ALPHA_WITH_LUMINANCE"<<std::endl;
-            osg::Image* newImage = new osg::Image;
-            newImage->allocateImage(image->s(), image->t(), image->r(), GL_LUMINANCE, image->getDataType());
-            osg::copyImage(image, 0, 0, 0, image->s(), image->t(), image->r(),
-                        newImage, 0, 0, 0, false);
-            return newImage;
-        }
-        default:
-            return image;
-    }
-}
-
-
-osg::TransferFunction1D* readTransferFunctionFile(const std::string& filename, float colorScale=1.0f)
-{
-    std::string foundFile = osgDB::findDataFile(filename);
-    if (foundFile.empty())
-    {
-        std::cout<<"Error: could not find transfer function file : "<<filename<<std::endl;
-        return 0;
-    }
-
-    std::cout<<"Reading transfer function "<<filename<<std::endl;
-
-    osg::TransferFunction1D::ColorMap colorMap;
-    osgDB::ifstream fin(foundFile.c_str());
-    while(fin)
-    {
-        float value, red, green, blue, alpha;
-        fin >> value >> red >> green >> blue >> alpha;
-        if (fin)
-        {
-            std::cout<<"value = "<<value<<" ("<<red<<", "<<green<<", "<<blue<<", "<<alpha<<")"<<std::endl;
-            colorMap[value] = osg::Vec4(red*colorScale,green*colorScale,blue*colorScale,alpha*colorScale);
-        }
-    }
-
-    if (colorMap.empty())
-    {
-        std::cout<<"Error: No values read from transfer function file: "<<filename<<std::endl;
-        return 0;
-    }
-
-    osg::TransferFunction1D* tf = new osg::TransferFunction1D;
-    tf->assign(colorMap);
-
-    return tf;
-}
-
-
 class TestSupportOperation: public osg::GraphicsOperation
 {
 public:
@@ -519,6 +402,9 @@ int main( int argc, char **argv )
     arguments.getApplicationUsage()->addCommandLineOption("-h or --help","Display this information");
     arguments.getApplicationUsage()->addCommandLineOption("--images [filenames]","Specify a stack of 2d images to build the 3d volume from.");
     arguments.getApplicationUsage()->addCommandLineOption("--shader","Use OpenGL Shading Language. (default)");
+    arguments.getApplicationUsage()->addCommandLineOption("--multi-pass","Use MultipassTechnique to render volumes.");
+    arguments.getApplicationUsage()->addCommandLineOption("--model","load 3D model and insert into the scene along with the volume.");
+    arguments.getApplicationUsage()->addCommandLineOption("--hull","load 3D hull that defines the extents of the region to volume render.");
     arguments.getApplicationUsage()->addCommandLineOption("--no-shader","Disable use of OpenGL Shading Language.");
     arguments.getApplicationUsage()->addCommandLineOption("--gpu-tf","Aply the transfer function on the GPU. (default)");
     arguments.getApplicationUsage()->addCommandLineOption("--cpu-tf","Apply the transfer function on the CPU.");
@@ -567,6 +453,9 @@ int main( int argc, char **argv )
     // add the stats handler
     viewer.addEventHandler(new osgViewer::StatsHandler);
 
+    // add stateset manipulator
+    viewer.addEventHandler(new osgGA::StateSetManipulator(viewer.getCamera()->getOrCreateStateSet()));
+
     viewer.getCamera()->setClearColor(osg::Vec4(0.0f,0.0f,0.0f,0.0f));
 
     // if user request help write it out to cout.
@@ -585,11 +474,7 @@ int main( int argc, char **argv )
     std::string tranferFunctionFile;
     while (arguments.read("--tf",tranferFunctionFile))
     {
-        transferFunction = readTransferFunctionFile(tranferFunctionFile);
-    }
-    while (arguments.read("--tf-255",tranferFunctionFile))
-    {
-        transferFunction = readTransferFunctionFile(tranferFunctionFile,1.0f/255.0f);
+        transferFunction = osgDB::readFile<osg::TransferFunction1D>(tranferFunctionFile);
     }
 
     while(arguments.read("--test"))
@@ -671,12 +556,12 @@ int main( int argc, char **argv )
     while(arguments.read("--r_maxTextureSize",r_maximumTextureSize)) {}
 
     // set up colour space operation.
-    ColourSpaceOperation colourSpaceOperation = NO_COLOUR_SPACE_OPERATION;
+    osg::ColorSpaceOperation colourSpaceOperation = osg::NO_COLOR_SPACE_OPERATION;
     osg::Vec4 colourModulate(0.25f,0.25f,0.25f,0.25f);
-    while(arguments.read("--modulate-alpha-by-luminance")) { colourSpaceOperation = MODULATE_ALPHA_BY_LUMINANCE; }
-    while(arguments.read("--modulate-alpha-by-colour", colourModulate.x(),colourModulate.y(),colourModulate.z(),colourModulate.w() )) { colourSpaceOperation = MODULATE_ALPHA_BY_COLOUR; }
-    while(arguments.read("--replace-alpha-with-luminance")) { colourSpaceOperation = REPLACE_ALPHA_WITH_LUMINANCE; }
-    while(arguments.read("--replace-rgb-with-luminance")) { colourSpaceOperation = REPLACE_RGB_WITH_LUMINANCE; }
+    while(arguments.read("--modulate-alpha-by-luminance")) { colourSpaceOperation = osg::MODULATE_ALPHA_BY_LUMINANCE; }
+    while(arguments.read("--modulate-alpha-by-colour", colourModulate.x(),colourModulate.y(),colourModulate.z(),colourModulate.w() )) { colourSpaceOperation = osg::MODULATE_ALPHA_BY_COLOR; }
+    while(arguments.read("--replace-alpha-with-luminance")) { colourSpaceOperation = osg::REPLACE_ALPHA_WITH_LUMINANCE; }
+    while(arguments.read("--replace-rgb-with-luminance")) { colourSpaceOperation = osg::REPLACE_RGB_WITH_LUMINANCE; }
 
 
     enum RescaleOperation
@@ -700,10 +585,35 @@ int main( int argc, char **argv )
     bool useManipulator = false;
     while(arguments.read("--manipulator") || arguments.read("-m")) { useManipulator = true; }
 
-
     bool useShader = true;
     while(arguments.read("--shader")) { useShader = true; }
     while(arguments.read("--no-shader")) { useShader = false; }
+
+    bool useMultipass = false;
+    while(arguments.read("--multi-pass")) useMultipass = true;
+
+    std::string filename;
+    osg::ref_ptr<osg::Group> models;
+    while(arguments.read("--model",filename))
+    {
+        osg::ref_ptr<osg::Node> model = osgDB::readNodeFile(filename);
+        if (model.valid())
+        {
+            if (!models) models = new osg::Group;
+            models->addChild(model.get());
+        }
+    }
+
+    osg::ref_ptr<osg::Group> hulls;
+    while(arguments.read("--hull",filename))
+    {
+        osg::ref_ptr<osg::Node> hull = osgDB::readNodeFile(filename);
+        if (hull.valid())
+        {
+            if (!hulls) hulls = new osg::Group;
+            hulls->addChild(hull.get());
+        }
+    }
 
     bool gpuTransferFunction = true;
     while(arguments.read("--gpu-tf")) { gpuTransferFunction = true; }
@@ -711,6 +621,9 @@ int main( int argc, char **argv )
 
     double sampleDensityWhenMoving = 0.0;
     while(arguments.read("--sdwm", sampleDensityWhenMoving)) {}
+
+    double sampleRatioWhenMoving = 0.0;
+    while(arguments.read("--srwm", sampleRatioWhenMoving)) {}
 
     while(arguments.read("--lod")) { sampleDensityWhenMoving = 0.02; }
 
@@ -1018,13 +931,13 @@ int main( int argc, char **argv )
     }
 
 
-    if (colourSpaceOperation!=NO_COLOUR_SPACE_OPERATION)
+    if (colourSpaceOperation!=osg::NO_COLOR_SPACE_OPERATION)
     {
         for(Images::iterator itr = images.begin();
             itr != images.end();
             ++itr)
         {
-            (*itr) = doColourSpaceConversion(colourSpaceOperation, itr->get(), colourModulate);
+            (*itr) = osg::colorSpaceConversion(colourSpaceOperation, itr->get(), colourModulate);
         }
     }
 
@@ -1115,8 +1028,16 @@ int main( int argc, char **argv )
         sp->setActiveProperty(0);
 
         osgVolume::AlphaFuncProperty* ap = new osgVolume::AlphaFuncProperty(alphaFunc);
-        osgVolume::SampleDensityProperty* sd = new osgVolume::SampleDensityProperty(0.005);
+        osgVolume::IsoSurfaceProperty* isop = new osgVolume::IsoSurfaceProperty(alphaFunc);
+
+        // SampleDensity is now deprecated
+        osgVolume::SampleDensityProperty* sd = new osgVolume::SampleDensityProperty(0.005f);
         osgVolume::SampleDensityWhenMovingProperty* sdwm = sampleDensityWhenMoving!=0.0 ? new osgVolume::SampleDensityWhenMovingProperty(sampleDensityWhenMoving) : 0;
+
+        // use SampleRatio in place of SampleDensity
+        osgVolume::SampleRatioProperty* sr = new osgVolume::SampleRatioProperty(1.0f);
+        osgVolume::SampleRatioWhenMovingProperty* srwm = sampleRatioWhenMoving!=0.0 ? new osgVolume::SampleRatioWhenMovingProperty(sampleRatioWhenMoving) : 0;
+
         osgVolume::TransparencyProperty* tp = new osgVolume::TransparencyProperty(1.0);
         osgVolume::TransferFunctionProperty* tfp = transferFunction.valid() ? new osgVolume::TransferFunctionProperty(transferFunction.get()) : 0;
 
@@ -1124,10 +1045,23 @@ int main( int argc, char **argv )
             // Standard
             osgVolume::CompositeProperty* cp = new osgVolume::CompositeProperty;
             cp->addProperty(ap);
-            cp->addProperty(sd);
+            if (useMultipass)
+            {
+                cp->addProperty(sr);
+                if (srwm) cp->addProperty(srwm);
+            }
+            else
+            {
+                cp->addProperty(sd);
+                if (sdwm) cp->addProperty(sdwm);
+            }
             cp->addProperty(tp);
-            if (sdwm) cp->addProperty(sdwm);
-            if (tfp) cp->addProperty(tfp);
+
+            if (tfp)
+            {
+                OSG_NOTICE<<"Adding TransferFunction"<<std::endl;
+                cp->addProperty(tfp);
+            }
 
             sp->addProperty(cp);
         }
@@ -1136,7 +1070,8 @@ int main( int argc, char **argv )
             // Light
             osgVolume::CompositeProperty* cp = new osgVolume::CompositeProperty;
             cp->addProperty(ap);
-            cp->addProperty(sd);
+            if (useMultipass) cp->addProperty(sr);
+            else cp->addProperty(sd);
             cp->addProperty(tp);
             cp->addProperty(new osgVolume::LightingProperty);
             if (sdwm) cp->addProperty(sdwm);
@@ -1148,9 +1083,10 @@ int main( int argc, char **argv )
         {
             // Isosurface
             osgVolume::CompositeProperty* cp = new osgVolume::CompositeProperty;
-            cp->addProperty(sd);
+            if (useMultipass) cp->addProperty(sr);
+            else cp->addProperty(sd);
             cp->addProperty(tp);
-            cp->addProperty(new osgVolume::IsoSurfaceProperty(alphaFunc));
+            cp->addProperty(isop);
             if (sdwm) cp->addProperty(sdwm);
             if (tfp) cp->addProperty(tfp);
 
@@ -1161,7 +1097,10 @@ int main( int argc, char **argv )
             // MaximumIntensityProjection
             osgVolume::CompositeProperty* cp = new osgVolume::CompositeProperty;
             cp->addProperty(ap);
-            cp->addProperty(sd);
+
+            if (useMultipass) cp->addProperty(sr);
+            else cp->addProperty(sd);
+
             cp->addProperty(tp);
             cp->addProperty(new osgVolume::MaximumIntensityProjectionProperty);
             if (sdwm) cp->addProperty(sdwm);
@@ -1180,7 +1119,14 @@ int main( int argc, char **argv )
         layer->addProperty(sp);
 
 
-        tile->setVolumeTechnique(new osgVolume::RayTracedTechnique);
+        if (useMultipass)
+        {
+            tile->setVolumeTechnique(new osgVolume::MultipassTechnique);
+        }
+        else
+        {
+            tile->setVolumeTechnique(new osgVolume::RayTracedTechnique);
+        }
     }
     else
     {
@@ -1196,8 +1142,11 @@ int main( int argc, char **argv )
         {
             if (image_3d.valid())
             {
-                image_3d->setFileName(name_no_ext + ".dds");
-                osgDB::writeImageFile(*image_3d, image_3d->getFileName());
+                std::string image_writeExtension = ".osgb";
+
+                image_3d->setFileName(name_no_ext + image_writeExtension);
+                osg::ref_ptr<osgDB::Options> options = new osgDB::Options("ddsNoAutoFlipWrite");;
+                osgDB::writeImageFile(*image_3d, image_3d->getFileName(), options.get());
             }
             osgDB::writeNodeFile(*volume, outputFile);
         }
@@ -1246,6 +1195,30 @@ int main( int argc, char **argv )
 
             loadedModel = group;
         }
+
+        if (hulls.get())
+        {
+            tile->addChild(hulls.get());
+        }
+
+        // add add models into the scene alongside the volume
+        if (models.get())
+        {
+            osg::ref_ptr<osg::Group> group = new osg::Group;
+            group->addChild(models.get());
+            group->addChild(loadedModel.get());
+            loadedModel = group.get();
+        }
+
+        // if we want to do multi-pass volume rendering we need decorate the whole scene with a VolumeScene node.
+        if (useMultipass)
+        {
+            osg::ref_ptr<osgVolume::VolumeScene> volumeScene = new osgVolume::VolumeScene;
+            volumeScene->addChild(loadedModel.get());
+            loadedModel->getOrCreateStateSet();
+            loadedModel = volumeScene.get();
+        }
+
 
 
         // set the scene to render

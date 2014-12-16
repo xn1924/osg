@@ -151,11 +151,9 @@ bool IntersectorGroup::containsIntersections()
 //  IntersectionVisitor
 //
 
-IntersectionVisitor::IntersectionVisitor(Intersector* intersector, ReadCallback* readCallback)
+IntersectionVisitor::IntersectionVisitor(Intersector* intersector, ReadCallback* readCallback):
+    osg::NodeVisitor(osg::NodeVisitor::INTERSECTION_VISITOR, osg::NodeVisitor::TRAVERSE_ACTIVE_CHILDREN)
 {
-    // override the default node visitor mode.
-    setTraversalMode(osg::NodeVisitor::TRAVERSE_ACTIVE_CHILDREN);
-
     _useKdTreesWhenAvailable = true;
     _dummyTraversal = false;
 
@@ -221,6 +219,11 @@ void IntersectionVisitor::apply(osg::Group& group)
     traverse(group);
 
     leave();
+}
+
+void IntersectionVisitor::apply(osg::Drawable& drawable)
+{
+    intersect( &drawable );
 }
 
 void IntersectionVisitor::apply(osg::Geode& geode)
@@ -397,6 +400,12 @@ void IntersectionVisitor::apply(osg::Transform& transform)
     osg::ref_ptr<osg::RefMatrix> matrix = _modelStack.empty() ? new osg::RefMatrix() : new osg::RefMatrix(*_modelStack.back());
     transform.computeLocalToWorldMatrix(*matrix,this);
 
+    // We want to ignore the view matrix if the transform is an absolute reference
+    if (transform.getReferenceFrame() != osg::Transform::RELATIVE_RF)
+    {
+        pushViewMatrix(new osg::RefMatrix());
+    }
+
     pushModelMatrix(matrix.get());
 
     // now push an new intersector clone transform to the new local coordinates
@@ -408,6 +417,11 @@ void IntersectionVisitor::apply(osg::Transform& transform)
     pop_clone();
 
     popModelMatrix();
+
+    if (transform.getReferenceFrame() != osg::Transform::RELATIVE_RF)
+    {
+        popViewMatrix();
+    }
 
     // tidy up an cached cull variables in the current intersector.
     leave();

@@ -1,4 +1,4 @@
-    /* -*-c++-*- Present3D - Copyright (C) 1999-2006 Robert Osfield
+/* -*-c++-*- Present3D - Copyright (C) 1999-2006 Robert Osfield
  *
  * This software is open source and may be redistributed and/or modified under
  * the terms of the GNU General Public License (GPL) version 2.0.
@@ -14,6 +14,7 @@
 #include <osg/io_utils>
 #include <osg/PagedLOD>
 
+#include <osgDB/ReadFile>
 #include <osgDB/ReaderWriter>
 #include <osgDB/FileNameUtils>
 #include <osgDB/FileUtils>
@@ -21,7 +22,7 @@
 
 #include <osgWidget/PdfReader>
 
-#include <osgPresentation/SlideShowConstructor>
+#include <osgPresentation/deprecated/SlideShowConstructor>
 
 #include <stdio.h>
 #include <string.h>
@@ -41,6 +42,8 @@ class ReaderWriterP3DXML : public osgDB::ReaderWriter
 public:
     ReaderWriterP3DXML()
     {
+        supportsOption("suppressEnvTags", "if set to (true|1) all env-tags in the p3d-file will be suppressed");
+
         _colorMap["WHITE"]  .set(1.0f,1.0f,1.0f,1.0f);
         _colorMap["BLACK"]  .set(0.0f,0.0f,0.0f,1.0f);
         _colorMap["PURPLE"] .set(1.0f,0.0f,1.0f,1.0f);
@@ -102,6 +105,51 @@ public:
         _notifyLevel = osg::INFO;
     }
 
+    bool match(const std::string& lhs, const std::string& rhs) const
+    {
+        // check for perfect match
+        // if (lhs==rhs) return true;
+
+        // OSG_NOTICE<<"comparing "<<lhs<<" and "<<rhs<<std::endl;
+
+        std::string::const_iterator lhs_itr = lhs.begin();
+        std::string::const_iterator rhs_itr = rhs.begin();
+        while((lhs_itr!=lhs.end()) && (rhs_itr!=rhs.end()))
+        {
+            char l = *(lhs_itr);
+            char r = *(rhs_itr);
+
+            // make sure character is upper case
+            if (l>='a' && l<='z') l = (l-'a')+'A';
+            if (r>='a' && r<='z') r = (r-'a')+'A';
+
+            // if both charaters are equal then move to the next character
+            if (l==r)
+            {
+                lhs_itr++;
+                rhs_itr++;
+                continue;
+            }
+
+            // if space, underscore or hyphon exist then stop over that particular character
+            if (l==' ' || l=='_' || l=='-')
+            {
+                lhs_itr++;
+                continue;
+            }
+            if (r==' ' || r=='_' || r=='-')
+            {
+                rhs_itr++;
+                continue;
+            }
+
+            break;
+        }
+        bool matched = (lhs_itr==lhs.end()) && (rhs_itr==rhs.end());
+        // OSG_NOTICE<<"  matched "<<matched<<std::endl;
+        return matched;
+    }
+
     virtual const char* className() const
     {
         return "present3D XML Reader/Writer";
@@ -113,6 +161,8 @@ public:
                osgDB::equalCaseInsensitive(extension,"xml") ;
     }
 
+    osgDB::XmlNode::Properties::const_iterator findProperty(osgDB::XmlNode* cur, const char* token) const;
+
     virtual ReadResult readNode(const std::string& fileName,
                                 const osgDB::ReaderWriter::Options* options) const;
 
@@ -122,27 +172,39 @@ public:
 
     osg::Node* parseXmlGraph(osgDB::XmlNode* root, bool readOnlyHoldingPage, osgDB::Options* options) const;
 
-    void parseModel(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur) const;
+    bool parseProperties(osgDB::XmlNode* root, osg::UserDataContainer& udc) const;
+    bool parsePropertyAnimation(osgDB::XmlNode* root, osgPresentation::PropertyAnimation& pa) const;
 
-    osg::TransferFunction1D* readTransferFunctionFile(const std::string& filename, float scale) const;
-    void parseVolume(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur) const;
+    void parseModel(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const;
+    void parseModelScript(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const;
 
-    void parseStereoPair(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur) const;
+    void parseVolume(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const;
 
-    void parseLayer(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur) const;
+    void parseStereoPair(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const;
 
-    void parseBullets(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur, bool inheritPreviousLayers, bool defineAsBaseLayer) const;
-    void parseText(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur, bool inheritPreviousLayers, bool defineAsBaseLayer) const;
+    void parseTimeout(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const;
 
-    void parsePage (osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur) const;
+    void parseSwitch(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const;
 
-    void parseSlide (osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur, bool parseTitles=true, bool parseLayers=true) const;
+    bool parseLayerChild(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur, float& totalIndent) const;
 
-    void parsePdfDocument (osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur) const;
+    void parseLayer(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const;
+
+    void parseBullets(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur, bool inheritPreviousLayers, bool defineAsBaseLayer) const;
+    void parseText(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur, bool inheritPreviousLayers, bool defineAsBaseLayer) const;
+
+    void parsePage (osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const;
+
+    void parseRunScriptFile (osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const;
+    void parseRunScript (osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const;
+
+    void parseSlide (osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur, bool parseTitles=true, bool parseLayers=true) const;
+
+    void parsePdfDocument (osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const;
 
     osg::Vec4 mapStringToColor(const std::string& str) const
     {
-        ColorMap::const_iterator itr=_colorMap.find(str);
+        ColorMap::const_iterator itr = find(_colorMap, str);
         if (itr!=_colorMap.end()) return itr->second;
         osg::Vec4 color;
         if (read(str,color)) return color;
@@ -169,6 +231,7 @@ public:
     inline bool read(const char* str, osg::Vec3& value) const;
     inline bool read(const char* str, osg::Vec4& value) const;
 
+    inline bool read(const std::string& str, bool& value) const;
     inline bool read(const std::string& str, int& value) const;
     inline bool read(const std::string& str, float& value) const;
     inline bool read(const std::string& str, double& value) const;
@@ -177,34 +240,54 @@ public:
     inline bool read(const std::string& str, osg::Vec3& value) const;
     inline bool read(const std::string& str, osg::Vec4& value) const;
 
-    bool getProperty(osgDB::XmlNode*cur, const char* token) const;
-    bool getProperty(osgDB::XmlNode*cur, const char* token, int& value) const;
-    bool getProperty(osgDB::XmlNode*cur, const char* token, float& value) const;
-    bool getProperty(osgDB::XmlNode*cur, const char* token, double& value) const;
-    bool getProperty(osgDB::XmlNode*cur, const char* token, int numberValues, float* values) const;
-    bool getProperty(osgDB::XmlNode*cur, const char* token, osg::Vec2& value) const;
-    bool getProperty(osgDB::XmlNode*cur, const char* token, osg::Vec3& value) const;
-    bool getProperty(osgDB::XmlNode*cur, const char* token, osg::Vec4& value) const;
-    bool getProperty(osgDB::XmlNode*cur, const char* token, std::string& value) const;
-    bool getTrimmedProperty(osgDB::XmlNode*cur, const char* token, std::string& value) const;
-    bool getProperty(osgDB::XmlNode*cur, const char* token, osgText::Text::Layout& value) const;
-    bool getProperty(osgDB::XmlNode*cur, const char* token, osgText::Text::AlignmentType& value) const;
-    bool getProperty(osgDB::XmlNode*cur, const char* token, osgText::Text::CharacterSizeMode& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token) const;
+    bool getKeyProperty(osgDB::XmlNode* cur, const char* token, int& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, bool& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, int& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, float& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, double& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, int numberValues, float* values) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, osg::Vec2& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, osg::Vec3& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, osg::Vec4& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, std::string& value) const;
+    bool getTrimmedProperty(osgDB::XmlNode* cur, const char* token, std::string& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, osgText::Text::Layout& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, osgText::Text::AlignmentType& value) const;
+    bool getProperty(osgDB::XmlNode* cur, const char* token, osgText::Text::CharacterSizeMode& value) const;
 
-    bool getProperties(osgDB::XmlNode*cur, osgPresentation::SlideShowConstructor::PositionData& value) const;
-    bool getProperties(osgDB::XmlNode*cur, osgPresentation::SlideShowConstructor::FontData& value) const;
-    bool getProperties(osgDB::XmlNode*cur, osgPresentation::SlideShowConstructor::ModelData& value) const;
-    bool getProperties(osgDB::XmlNode*cur, osgPresentation::SlideShowConstructor::ImageData& value) const;
-    bool getJumpProperties(osgDB::XmlNode*cur, bool& relativeJump, int& slideNum, int& layerNum) const;
+    bool getProperties(osgDB::XmlNode* cur, osgPresentation::SlideShowConstructor::PositionData& value) const;
+    bool getProperties(osgDB::XmlNode* cur, osgPresentation::SlideShowConstructor::FontData& value) const;
+    bool getProperties(osgDB::XmlNode* cur, osgPresentation::SlideShowConstructor::ModelData& value) const;
+    bool getProperties(osgDB::XmlNode* cur, osgPresentation::SlideShowConstructor::ImageData& value) const;
+    bool getProperties(osgDB::XmlNode* cur, osgPresentation::SlideShowConstructor::ScriptData& value) const;
 
-    bool getKeyPositionInner(osgDB::XmlNode*cur, osgPresentation::KeyPosition& keyPosition) const;
-    bool getKeyPosition(osgDB::XmlNode*cur, osgPresentation::KeyPosition& keyPosition) const;
+    bool getJumpProperties(osgDB::XmlNode* cur, osgPresentation::JumpData& jumpData) const;
+
+    bool getKeyPositionInner(osgDB::XmlNode* cur, osgPresentation::KeyPosition& keyPosition) const;
+    bool getKeyPosition(osgDB::XmlNode* cur, osgPresentation::KeyPosition& keyPosition) const;
 
     typedef std::map<std::string,osg::Vec4> ColorMap;
     typedef std::map<std::string,osgText::Text::Layout> LayoutMap;
     typedef std::map<std::string,osgText::Text::AlignmentType> AlignmentMap;
     typedef std::map<std::string,osgText::Text::CharacterSizeMode> CharacterSizeModeMap;
     typedef std::map<std::string, unsigned int> StringKeyMap;
+
+    template<typename T>
+    typename T::const_iterator find(const T& container, const std::string& rhs) const
+    {
+        for(typename T::const_iterator itr = container.begin();
+            itr != container.end();
+            ++itr)
+        {
+            if (match(itr->first, rhs))
+            {
+                // OSG_NOTICE<<"Found match "<<itr->first<<" == "<<rhs<<std::endl;
+                return itr;
+            }
+        }
+        return container.end();
+    }
 
     std::string expandEnvVarsInFileName(const std::string& filename) const;
 
@@ -314,6 +397,18 @@ bool ReaderWriterP3DXML::read(const char* str, osg::Vec4& value) const
     return !iss.fail();
 }
 
+bool ReaderWriterP3DXML::read(const std::string& str, bool& value) const
+{
+    if ((str == "1") || (str == "0"))
+    {
+        value = (str == "1");
+        return true;
+    }
+    std::string s(osgDB::convertToLowerCase(str));
+    value = match(s,"true");
+    return true;
+}
+
 bool ReaderWriterP3DXML::read(const std::string& str, int& value) const
 {
     std::istringstream iss(str);
@@ -368,83 +463,131 @@ bool ReaderWriterP3DXML::read(const std::string& str, osg::Vec4& value) const
     return !iss.fail();
 }
 
+osgDB::XmlNode::Properties::const_iterator ReaderWriterP3DXML::findProperty(osgDB::XmlNode* cur, const char* token) const
+{
+    osgDB::XmlNode::Properties::const_iterator itr = find(cur->properties, token);
+    return itr;
+}
+
 bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token) const
 {
-    return cur->properties.count(token)!=0;
+    return find(cur->properties, token) != cur->properties.end();
 }
 
-bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, int& value) const
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, bool& value) const
 {
-    osgDB::XmlNode::Properties::iterator itr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator itr = findProperty(cur, token);
     if (itr==cur->properties.end()) return false;
     return read(itr->second,value);
 }
 
-bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, float& value) const
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, int& value) const
 {
-    osgDB::XmlNode::Properties::iterator itr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator itr = findProperty(cur, token);
     if (itr==cur->properties.end()) return false;
     return read(itr->second,value);
 }
 
-bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, double& value) const
+bool ReaderWriterP3DXML::getKeyProperty(osgDB::XmlNode* cur, const char* token, int& value) const
 {
-    osgDB::XmlNode::Properties::iterator itr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator itr = findProperty(cur, token);
+    if (itr==cur->properties.end()) return false;
+
+    OSG_NOTICE<<"getKeyProperty()="<<itr->second<<std::endl;
+
+    if (itr->second.empty())
+    {
+        OSG_NOTICE<<"   empty()"<<std::endl;
+        return false;
+    }
+
+    if (itr->second.find("0x",0,2)!=std::string::npos)
+    {
+        std::istringstream iss(itr->second);
+        iss>>std::hex>>value;
+        OSG_NOTICE<<"ReaderWriterP3DXML::getKeyProperty() hex result = "<<value<<std::endl;
+        return true;
+    }
+    else if (itr->second.size()>1 && (itr->second[0]>='0' && itr->second[0]<='9'))
+    {
+        std::istringstream iss(itr->second);
+        iss>>value;
+        OSG_NOTICE<<"ReaderWriterP3DXML::getKeyProperty() numeric result = "<<value<<std::endl;
+        return true;
+    }
+    else
+    {
+        value = itr->second[0];
+        OSG_NOTICE<<"ReaderWriterP3DXML::getKeyProperty() alphanumeric result = "<<value<<std::endl;
+        return true;
+    }
+}
+
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, float& value) const
+{
+    osgDB::XmlNode::Properties::const_iterator itr = findProperty(cur, token);
     if (itr==cur->properties.end()) return false;
     return read(itr->second,value);
 }
 
-bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, int numberValues, float* values) const
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, double& value) const
 {
-    osgDB::XmlNode::Properties::iterator itr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator itr = findProperty(cur, token);
+    if (itr==cur->properties.end()) return false;
+    return read(itr->second,value);
+}
+
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, int numberValues, float* values) const
+{
+    osgDB::XmlNode::Properties::const_iterator itr = findProperty(cur, token);
     if (itr==cur->properties.end()) return false;
     return read(itr->second, numberValues, values);
 }
 
-bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, osg::Vec2& value) const
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, osg::Vec2& value) const
 {
-    osgDB::XmlNode::Properties::iterator itr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator itr = findProperty(cur, token);
     if (itr==cur->properties.end()) return false;
     return read(itr->second,value);
 }
 
-bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, osg::Vec3& value) const
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, osg::Vec3& value) const
 {
-    osgDB::XmlNode::Properties::iterator itr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator itr = findProperty(cur, token);
     if (itr==cur->properties.end()) return false;
     return read(itr->second,value);
 }
 
-bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, osg::Vec4& value) const
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, osg::Vec4& value) const
 {
-    osgDB::XmlNode::Properties::iterator itr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator itr = findProperty(cur, token);
     if (itr==cur->properties.end()) return false;
     return read(itr->second,value);
 }
 
-bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, std::string& value) const
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, std::string& value) const
 {
-    osgDB::XmlNode::Properties::iterator itr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator itr = findProperty(cur, token);
     if (itr==cur->properties.end()) return false;
     value = itr->second;
     return true;
 }
 
-bool ReaderWriterP3DXML::getTrimmedProperty(osgDB::XmlNode*cur, const char* token, std::string& value) const
+bool ReaderWriterP3DXML::getTrimmedProperty(osgDB::XmlNode* cur, const char* token, std::string& value) const
 {
-    osgDB::XmlNode::Properties::iterator itr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator itr = findProperty(cur, token);
     if (itr==cur->properties.end()) return false;
     value = osgDB::trimEnclosingSpaces(itr->second);
     return true;
 }
 
-bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, osgText::Text::Layout& value) const
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, osgText::Text::Layout& value) const
 {
-    osgDB::XmlNode::Properties::iterator pitr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator pitr = findProperty(cur, token);
     if (pitr==cur->properties.end()) return false;
 
     const std::string& str = pitr->second;
-    LayoutMap::const_iterator itr = _layoutMap.find(str);
+    LayoutMap::const_iterator itr = find(_layoutMap,str);
     if (itr!=_layoutMap.end())
     {
         value = itr->second;
@@ -452,13 +595,13 @@ bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, osgT
     return true;
 }
 
-bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, osgText::Text::AlignmentType& value) const
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, osgText::Text::AlignmentType& value) const
 {
-    osgDB::XmlNode::Properties::iterator pitr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator pitr = findProperty(cur, token);
     if (pitr==cur->properties.end()) return false;
 
     const std::string& str = pitr->second;
-    AlignmentMap::const_iterator itr = _alignmentMap.find(str);
+    AlignmentMap::const_iterator itr = find(_alignmentMap, str);
     if (itr!=_alignmentMap.end())
     {
         value = itr->second;
@@ -466,13 +609,13 @@ bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, osgT
     return true;
 }
 
-bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, osgText::Text::CharacterSizeMode& value) const
+bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode* cur, const char* token, osgText::Text::CharacterSizeMode& value) const
 {
-    osgDB::XmlNode::Properties::iterator pitr = cur->properties.find(token);
+    osgDB::XmlNode::Properties::const_iterator pitr = findProperty(cur, token);
     if (pitr==cur->properties.end()) return false;
 
     const std::string& str = pitr->second;
-    CharacterSizeModeMap::const_iterator itr = _characterSizeModeMap.find(str);
+    CharacterSizeModeMap::const_iterator itr = find(_characterSizeModeMap, str);
     if (itr!=_characterSizeModeMap.end())
     {
         value = itr->second;
@@ -480,7 +623,7 @@ bool ReaderWriterP3DXML::getProperty(osgDB::XmlNode*cur, const char* token, osgT
     return true;
 }
 
-bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::SlideShowConstructor::PositionData& value) const
+bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode* cur, osgPresentation::SlideShowConstructor::PositionData& value) const
 {
     bool propertiesRead=false;
 
@@ -497,8 +640,8 @@ bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::Slid
     {
         propertiesRead = true;
 
-        if (str=="model") value.frame = osgPresentation::SlideShowConstructor::MODEL;
-        else if (str=="slide") value.frame = osgPresentation::SlideShowConstructor::SLIDE;
+        if (match(str,"model")) value.frame = osgPresentation::SlideShowConstructor::MODEL;
+        else if (match(str,"slide")) value.frame = osgPresentation::SlideShowConstructor::SLIDE;
         else OSG_NOTIFY(_notifyLevel)<<"Parser error - coordinate_frame=\""<<str<<"\" unrecongonized value"<<std::endl;
 
         OSG_NOTIFY(_notifyLevel)<<"read coordinate_frame "<< ((value.frame==osgPresentation::SlideShowConstructor::MODEL) ? "osgPresentation::SlideShowConstructor::MODEL" : "osgPresentation::SlideShowConstructor::SLIDE")<<std::endl;
@@ -517,8 +660,8 @@ bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::Slid
             osg::Vec3 vec3;
 
             bool fail = false;
-            if (str=="center") value.position.set(0.5f,.5f,0.0f);
-            else if (str=="eye") value.position.set(0.0f,0.0f,1.0f);
+            if (match(str,"center")) value.position.set(0.5f,.5f,0.0f);
+            else if (match(str,"eye")) value.position.set(0.0f,0.0f,1.0f);
             else if (read(str,vec3)) value.position = vec3;
             else if (read(str,vec2)) value.position.set(vec3.x(),vec3.y(),0.0f);
             else fail = true;
@@ -537,8 +680,8 @@ bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::Slid
             propertiesRead = true;
 
             bool fail = false;
-            if (str=="center") value.position.set(0.0f,1.0f,0.0f);
-            else if (str=="eye") value.position.set(0.0f,0.0f,0.0f);
+            if (match(str,"center")) value.position.set(0.0f,1.0f,0.0f);
+            else if (match(str,"eye")) value.position.set(0.0f,0.0f,0.0f);
             else if (!read(str,value.position)) fail = true;
 
             if (fail) { OSG_NOTIFY(_notifyLevel)<<"Parser error - position=\""<<str<<"\" unrecongonized value"<<std::endl; }
@@ -704,38 +847,38 @@ bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::Slid
     if (getProperty(cur, "path_loop_mode", str))
     {
         OSG_NOTIFY(_notifyLevel)<<"path_loop_mode "<<str<<std::endl;
-        if (str=="LOOP") value.path_loop_mode=osg::AnimationPath::LOOP;
-        else if (str=="SWING") value.path_loop_mode=osg::AnimationPath::SWING;
-        else if (str=="NO_LOOPING") value.path_loop_mode=osg::AnimationPath::NO_LOOPING;
+        if (match(str,"LOOP")) value.path_loop_mode=osg::AnimationPath::LOOP;
+        else if (match(str,"SWING")) value.path_loop_mode=osg::AnimationPath::SWING;
+        else if (match(str,"NO_LOOPING")) value.path_loop_mode=osg::AnimationPath::NO_LOOPING;
         propertiesRead = true;
     }
 
     if (getProperty(cur, "animation_material_loop_mode", str))
     {
         OSG_NOTIFY(_notifyLevel)<<"animation_material_loop_mode "<<str<<std::endl;
-        if (str=="LOOP") value.animation_material_loop_mode=osgPresentation::AnimationMaterial::LOOP;
-        else if (str=="SWING") value.animation_material_loop_mode=osgPresentation::AnimationMaterial::SWING;
-        else if (str=="NO_LOOPING") value.animation_material_loop_mode=osgPresentation::AnimationMaterial::NO_LOOPING;
+        if (match(str,"LOOP")) value.animation_material_loop_mode=osgPresentation::AnimationMaterial::LOOP;
+        else if (match(str,"SWING")) value.animation_material_loop_mode=osgPresentation::AnimationMaterial::SWING;
+        else if (match(str,"NO_LOOPING")) value.animation_material_loop_mode=osgPresentation::AnimationMaterial::NO_LOOPING;
         propertiesRead = true;
     }
 
     if (getProperty(cur, "billboard", str))
     {
-        value.autoRotate = (str != "off" && str != "Off" && str != "OFF");
+        value.autoRotate = match(str,"on");
         OSG_NOTIFY(_notifyLevel)<<"billboard, str="<<str<<", autoRotate="<<value.autoRotate<<std::endl;
         propertiesRead = true;
     }
 
     if (getProperty(cur, "scale_to_screen",str))
     {
-        value.autoScale = (str != "off" && str != "Off" && str != "OFF");
+        value.autoScale = match(str,"on");
         OSG_NOTIFY(_notifyLevel)<<"scale-to-screen, str="<<str<<", autoRotate="<<value.autoScale<<std::endl;
         propertiesRead = true;
     }
 
     if (getProperty(cur, "hud", str))
     {
-        value.hud = (str != "off" && str != "Off" && str != "OFF");
+        value.hud = match(str,"on");
         OSG_NOTIFY(_notifyLevel)<<"hud, str="<<str<<", hud="<<value.hud<<std::endl;
         propertiesRead = true;
     }
@@ -744,7 +887,7 @@ bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::Slid
     return propertiesRead;
 }
 
-bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::SlideShowConstructor::FontData& value) const
+bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode* cur, osgPresentation::SlideShowConstructor::FontData& value) const
 {
     bool propertiesRead=false;
 
@@ -783,14 +926,30 @@ bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::Slid
         OSG_NOTIFY(_notifyLevel)<<"read alignment \""<<value.alignment<<"\""<<std::endl;
     }
 
+    std::string colorString;
+    if (getProperty(cur, "color", colorString) || getProperty(cur, "colour", colorString) )
+    {
+        propertiesRead = true;
+
+        value.color = mapStringToColor(colorString);
+
+        OSG_NOTIFY(_notifyLevel)<<"read color \""<<value.color<<"\""<<std::endl;
+    }
+
     return propertiesRead;
 }
 
-bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::SlideShowConstructor::ModelData& value) const
+bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode* cur, osgPresentation::SlideShowConstructor::ModelData& value) const
 {
     bool propertiesRead=false;
 
     OSG_NOTIFY(_notifyLevel)<<"in getProperties(ModelData)"<<std::endl;
+
+    if (getProperty(cur, "region", value.region))
+    {
+        propertiesRead = true;
+        OSG_NOTIFY(_notifyLevel)<<"read region \""<<value.region<<"\""<<std::endl;
+    }
 
     if (getProperty(cur, "effect", value.effect))
     {
@@ -807,7 +966,7 @@ bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::Slid
     return propertiesRead;
 }
 
-bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::SlideShowConstructor::ImageData& value) const
+bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode* cur, osgPresentation::SlideShowConstructor::ImageData& value) const
 {
     bool propertiesRead=false;
 
@@ -862,7 +1021,7 @@ bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::Slid
     if (getProperty(cur, "looping", str))
     {
         propertiesRead = true;
-        if (str=="ON") value.loopingMode = osg::ImageStream::LOOPING;
+        if (match(str,"on")) value.loopingMode = osg::ImageStream::LOOPING;
         else value.loopingMode = osg::ImageStream::NO_LOOPING;
         OSG_NOTIFY(_notifyLevel)<<"looping \""<<str<<"\""<<std::endl;
     }
@@ -882,11 +1041,58 @@ bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::Slid
     if (getProperty(cur, "paging_mode", str))
     {
         propertiesRead = true;
-        if (str=="PRE_LOAD_ALL_IMAGES") value.imageSequencePagingMode = osg::ImageSequence::PRE_LOAD_ALL_IMAGES;
-        else if (str=="PAGE_AND_RETAIN_IMAGES") value.imageSequencePagingMode = osg::ImageSequence::PAGE_AND_RETAIN_IMAGES;
-        else if (str=="PAGE_AND_DISCARD_USED_IMAGES") value.imageSequencePagingMode = osg::ImageSequence::PAGE_AND_DISCARD_USED_IMAGES;
+        if (match(str,"PRE_LOAD_ALL_IMAGES")) value.imageSequencePagingMode = osg::ImageSequence::PRE_LOAD_ALL_IMAGES;
+        else if (match(str,"PAGE_AND_RETAIN_IMAGES")) value.imageSequencePagingMode = osg::ImageSequence::PAGE_AND_RETAIN_IMAGES;
+        else if (match(str,"PAGE_AND_DISCARD_USED_IMAGES")) value.imageSequencePagingMode = osg::ImageSequence::PAGE_AND_DISCARD_USED_IMAGES;
+        else if (match(str,"LOAD_AND_RETAIN_IN_UPDATE_TRAVERSAL")) value.imageSequencePagingMode = osg::ImageSequence::LOAD_AND_RETAIN_IN_UPDATE_TRAVERSAL;
+        else if (match(str,"LOAD_AND_DISCARD_IN_UPDATE_TRAVERSAL")) value.imageSequencePagingMode = osg::ImageSequence::LOAD_AND_DISCARD_IN_UPDATE_TRAVERSAL;
 
         OSG_NOTIFY(_notifyLevel)<<"read imageSequencePagingMode \""<<value.imageSequencePagingMode<<"\""<<std::endl;
+    }
+
+    if (getProperty(cur, "interaction_mode", str))
+    {
+        propertiesRead = true;
+
+        if (match(str,"PLAY_AUTOMATICALLY_LIKE_MOVIE")) value.imageSequenceInteractionMode = osgPresentation::SlideShowConstructor::ImageData::PLAY_AUTOMATICALLY_LIKE_MOVIE;
+        else if (match(str,"USE_MOUSE_X_POSITION")) value.imageSequenceInteractionMode = osgPresentation::SlideShowConstructor::ImageData::USE_MOUSE_X_POSITION;
+        else if (match(str,"USE_MOUSE_Y_POSITION")) value.imageSequenceInteractionMode = osgPresentation::SlideShowConstructor::ImageData::USE_MOUSE_Y_POSITION;
+
+        OSG_NOTIFY(_notifyLevel)<<"read imageSequencePagingMode \""<<value.imageSequenceInteractionMode<<"\""<<std::endl;
+    }
+
+    if (getProperty(cur, "blending", str))
+    {
+        propertiesRead = true;
+
+        if (match(str,"on") || match(str,"enable")) value.blendingHint = osgPresentation::SlideShowConstructor::ImageData::ON;
+        else value.blendingHint = osgPresentation::SlideShowConstructor::ImageData::OFF;
+
+        OSG_NOTIFY(_notifyLevel)<<"read blendingHint \""<<value.blendingHint<<"\""<<std::endl;
+    }
+
+    if (getProperty(cur, "delay", value.delayTime))
+    {
+        propertiesRead = true;
+        OSG_NOTIFY(_notifyLevel)<<"read delay \""<<value.delayTime<<"\""<<std::endl;
+    }
+
+    if (getProperty(cur, "start", value.startTime))
+    {
+        propertiesRead = true;
+        OSG_NOTIFY(_notifyLevel)<<"read start \""<<value.startTime<<"\""<<std::endl;
+    }
+
+    if (getProperty(cur, "stop", value.stopTime))
+    {
+        propertiesRead = true;
+        OSG_NOTIFY(_notifyLevel)<<"read stop \""<<value.stopTime<<"\""<<std::endl;
+    }
+
+    if (getProperty(cur, "volume", value.volume))
+    {
+        propertiesRead = true;
+        OSG_NOTIFY(_notifyLevel)<<"read volume \""<<value.volume<<"\""<<std::endl;
     }
 
     /*
@@ -911,19 +1117,145 @@ bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode*cur, osgPresentation::Slid
     return propertiesRead;
 }
 
-bool ReaderWriterP3DXML::getJumpProperties(osgDB::XmlNode*cur, bool& relativeJump, int& slideNum, int& layerNum) const
+bool ReaderWriterP3DXML::getProperties(osgDB::XmlNode* cur, osgPresentation::SlideShowConstructor::ScriptData& value) const
+{
+    bool propertiesRead=false;
+
+    std::string name;
+    if (getProperty(cur, "update_script", name))
+    {
+        value.scripts.push_back(osgPresentation::SlideShowConstructor::ScriptPair(osgPresentation::SlideShowConstructor::UPDATE_SCRIPT, name));
+        propertiesRead = true;
+    }
+
+    if (getProperty(cur, "event_script", name))
+    {
+        value.scripts.push_back(osgPresentation::SlideShowConstructor::ScriptPair(osgPresentation::SlideShowConstructor::EVENT_SCRIPT, name));
+        propertiesRead = true;
+    }
+
+    return propertiesRead;
+}
+
+bool ReaderWriterP3DXML::parseProperties(osgDB::XmlNode* root, osg::UserDataContainer& udc) const
+{
+    bool readProperties = false;
+    OSG_NOTICE<<"Doing parseProperties()"<<std::endl;
+    for(osgDB::XmlNode::Children::iterator itr = root->children.begin();
+        itr != root->children.end();
+        ++itr)
+    {
+        osgDB::XmlNode* cur = itr->get();
+
+        if (match(cur->name, "property"))
+        {
+            std::string name;
+            std::string type;
+
+            getProperty(cur, "name", name);
+            getProperty(cur, "type", type);
+
+            if (match(type,"float"))
+            {
+                float value;
+                std::stringstream str(cur->contents);
+                str>>value;
+
+                udc.setUserValue(name, value);
+                readProperties = true;
+
+                OSG_NOTICE<<"Adding property float "<<value<<std::endl;
+            }
+            else if (match(type,"int"))
+            {
+                int value;
+                std::stringstream str(cur->contents);
+                str>>value;
+
+                udc.setUserValue(name, value);
+                readProperties = true;
+
+                OSG_NOTICE<<"Adding property int "<<value<<std::endl;
+            }
+            else
+            {
+                udc.setUserValue(name, cur->contents);
+                readProperties = true;
+                OSG_NOTICE<<"Adding property string "<<cur->contents<<std::endl;
+            }
+        }
+        else
+        {
+            OSG_NOTICE<<"Unhandled tag["<<cur->name<<"] expecting <property>"<<std::endl;
+        }
+    }
+    return readProperties;
+}
+
+bool ReaderWriterP3DXML::parsePropertyAnimation(osgDB::XmlNode* root, osgPresentation::PropertyAnimation& pa) const
+{
+    bool readKeyframes = false;
+    OSG_NOTICE<<"Doing parsePropertyAnimation()"<<std::endl;
+    for(osgDB::XmlNode::Children::iterator itr = root->children.begin();
+        itr != root->children.end();
+        ++itr)
+    {
+        osgDB::XmlNode* cur = itr->get();
+
+        if (match(cur->name, "key_frame"))
+        {
+
+            double time;
+            if (getProperty(cur, "time", time))
+            {
+                osg::ref_ptr<osg::UserDataContainer> udc = new osg::DefaultUserDataContainer;
+                if (parseProperties(cur, *udc))
+                {
+                    OSG_NOTICE<<"Adding keyframe"<<std::endl;
+                    pa.addKeyFrame(time, udc.get());
+                    readKeyframes = true;
+                }
+            }
+            else
+            {
+                OSG_NOTICE<<"No time assigned to key_frame, ignoring <key_frame>"<<std::endl;
+            }
+        }
+        else
+        {
+            OSG_NOTICE<<"Unhandled tag["<<cur->name<<"] expecting <key_frame>"<<std::endl;
+        }
+    }
+
+    return readKeyframes;
+}
+
+
+bool ReaderWriterP3DXML::getJumpProperties(osgDB::XmlNode* cur, osgPresentation::JumpData& jumpData) const
 {
     bool propertyRead = false;
 
-    if (getProperty(cur, "slide", slideNum))
+    if (getProperty(cur, "slide_name", jumpData.slideName))
     {
-        OSG_INFO<<"slide "<<slideNum<<std::endl;
+        OSG_INFO<<"slide_name "<<jumpData.slideName<<std::endl;
         propertyRead = true;
     }
 
-    if (getProperty(cur, "layer", layerNum))
+    if (getProperty(cur, "slide", jumpData.slideNum))
     {
-        OSG_INFO<<"layer "<<layerNum<<std::endl;
+        OSG_INFO<<"slide "<<jumpData.slideNum<<std::endl;
+        propertyRead = true;
+    }
+
+    if (getProperty(cur, "layer", jumpData.layerNum))
+    {
+        OSG_INFO<<"layer "<<jumpData.layerNum<<std::endl;
+        propertyRead = true;
+    }
+
+    if (getProperty(cur, "layer_name", jumpData.layerName))
+    {
+        OSG_INFO<<"layer_name "<<jumpData.layerName<<std::endl;
         propertyRead = true;
     }
 
@@ -932,20 +1264,22 @@ bool ReaderWriterP3DXML::getJumpProperties(osgDB::XmlNode*cur, bool& relativeJum
     {
         OSG_INFO<<"jump "<<jumpType<<std::endl;
         propertyRead = true;
-        relativeJump = (jumpType=="relative") || (jumpType=="Relative") || (jumpType=="RELATIVE") ;
+        jumpData.relativeJump = match(jumpType,"relative");
     }
 
     return propertyRead;
 }
 
-void ReaderWriterP3DXML::parseModel(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur) const
+void ReaderWriterP3DXML::parseModel(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const
 {
-
     osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getModelPositionData();
-   bool positionRead = getProperties(cur,positionData);
+    bool positionRead = getProperties(cur, positionData);
 
     osgPresentation::SlideShowConstructor::ModelData modelData;// = constructor.getModelData();
-    getProperties(cur,modelData);
+    getProperties(cur, modelData);
+
+    osgPresentation::SlideShowConstructor::ScriptData scriptData;
+    getProperties(cur, scriptData);
 
     std::string filename = cur->getTrimmedContents();
 
@@ -953,68 +1287,64 @@ void ReaderWriterP3DXML::parseModel(osgPresentation::SlideShowConstructor& const
     {
         constructor.addModel(filename,
                              positionRead ? positionData : constructor.getModelPositionData(),
-                             modelData);
+                             modelData,
+                             scriptData
+                            );
     }
 }
 
 
-
-osg::TransferFunction1D* ReaderWriterP3DXML::readTransferFunctionFile(const std::string& filename, float scale) const
+void ReaderWriterP3DXML::parseModelScript(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const
 {
-    std::string foundFile = osgDB::findDataFile(filename);
-    if (foundFile.empty())
+    osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getModelPositionData();
+    bool positionRead = getProperties(cur, positionData);
+
+    osgPresentation::SlideShowConstructor::ModelData modelData;// = constructor.getModelData();
+    getProperties(cur, modelData);
+
+    osgPresentation::SlideShowConstructor::ScriptData scriptData;
+    getProperties(cur, scriptData);
+
+    std::string language = "lua";
+    getProperty(cur, "language", language);
+
+    std::string function = "";
+    getProperty(cur, "function", function);
+
+    std::string scriptContents = cur->contents;
+
+    if (!scriptContents.empty())
     {
-        OSG_NOTICE<<"Error: could not find transfer function file : "<<filename<<std::endl;
-        return 0;
-    }
+        osg::ref_ptr<osg::Script> script = new osg::Script;
+        script->setLanguage(language);
+        script->setScript(scriptContents);
 
-    OSG_NOTICE<<"Reading transfer function "<<filename<<std::endl;
-
-    osg::TransferFunction1D::ColorMap colorMap;
-    osgDB::ifstream fin(foundFile.c_str());
-    while(fin)
-    {
-        char readline[4096];
-        *readline = 0;
-        fin.getline(readline, sizeof(readline));
-
-        if (*readline!=0)
+        osg::ScriptEngine* se = constructor.getOrCreateScriptEngine(language);
+        if (se)
         {
-            std::stringstream str(readline);
+            osg::Parameters inputParameters, outputParameters;
+            se->run(script.get(), function, inputParameters, outputParameters);
 
-            float value, red, green, blue, alpha;
-            str >> value >> red >> green >> blue >> alpha;
-
-            *readline = 0;
-            str.getline(readline, sizeof(readline));
-
-            char* comment = readline;
-            while(*comment==' ' || *comment=='\t' ) ++comment;
-
-            if (*comment!=0)
+            for(osg::Parameters::iterator itr = outputParameters.begin();
+                itr != outputParameters.end();
+                ++itr)
             {
-                OSG_NOTICE<<"value = "<<value<<" ("<<red<<", "<<green<<", "<<blue<<", "<<alpha<<") comment = ["<<comment<<"]"<<std::endl;
+                OSG_NOTICE<<"Parsing return object "<<(*itr)->className()<<std::endl;
+                osg::Node* model = dynamic_cast<osg::Node*>(itr->get());
+                if (model)
+                {
+                    OSG_NOTICE<<"Adding model "<<std::endl;
+                    constructor.addModel(model,
+                                         positionRead ? positionData : constructor.getModelPositionData(),
+                                         modelData,
+                                         scriptData
+                                         );
+                }
             }
-            else
-            {
-                OSG_NOTICE<<"value = "<<value<<" ("<<red<<", "<<green<<", "<<blue<<", "<<alpha<<")"<<std::endl;
-            }
-            colorMap[value] = osg::Vec4(red*scale,green*scale,blue*scale,alpha*scale);
         }
+
     }
-
-    if (colorMap.empty())
-    {
-        OSG_NOTICE<<"Error: No values read from transfer function file: "<<filename<<std::endl;
-        return 0;
-    }
-
-    osg::TransferFunction1D* tf = new osg::TransferFunction1D;
-    tf->assign(colorMap);
-
-    return tf;
 }
-
 
 void ReaderWriterP3DXML::parseVolume(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const
 {
@@ -1024,32 +1354,96 @@ void ReaderWriterP3DXML::parseVolume(osgPresentation::SlideShowConstructor& cons
 
     osgPresentation::SlideShowConstructor::VolumeData volumeData;
 
+    // check for any hulls
+    for(osgDB::XmlNode::Children::iterator itr = cur->children.begin();
+    itr != cur->children.end();
+    ++itr)
+    {
+        osgDB::XmlNode* child = itr->get();
+        if (match(child->name,"hull"))
+        {
+            volumeData.hull = child->contents;
+            getProperties(child, volumeData.hullPositionData);
+        }
+    }
+
+    std::string vs;
+    if (getProperty(cur, "vs", vs) || getProperty(cur, "VolumeSettings", vs))
+    {
+        volumeData.volumeSettings = osgDB::readFile<osgVolume::VolumeSettings>(vs);
+        if (volumeData.volumeSettings.valid())
+        {
+            OSG_NOTICE<<"VolumeSetting read "<<vs<<" "<<volumeData.volumeSettings.get()<<std::endl;
+            volumeData.volumeSettings->setFilename(vs);
+            OSG_NOTICE<<" assigned name to VS "<<volumeData.volumeSettings->getFilename()<<std::endl;
+        }
+    }
+
+    if (!volumeData.volumeSettings)
+    {
+        OSG_NOTICE<<"VolumeSetting fallback has been created"<<std::endl;
+        volumeData.volumeSettings = new osgVolume::VolumeSettings;
+    }
+
     // check the rendering technique/shading model to use
     std::string technique;
     if (getProperty(cur, "technique", technique))
     {
-        if      (technique=="standard") volumeData.shadingModel =  osgPresentation::SlideShowConstructor::VolumeData::Standard;
-        else if (technique=="mip") volumeData.shadingModel =  osgPresentation::SlideShowConstructor::VolumeData::MaximumIntensityProjection;
-        else if (technique=="isosurface" || technique=="iso" ) volumeData.shadingModel =  osgPresentation::SlideShowConstructor::VolumeData::Isosurface;
-        else if (technique=="light") volumeData.shadingModel =  osgPresentation::SlideShowConstructor::VolumeData::Light;
+        if      (match(technique,"standard")) volumeData.shadingModel =  osgVolume::VolumeSettings::Standard;
+        else if (match(technique,"mip")) volumeData.shadingModel =  osgVolume::VolumeSettings::MaximumIntensityProjection;
+        else if (match(technique,"isosurface") || match(technique,"iso") ) volumeData.shadingModel =  osgVolume::VolumeSettings::Isosurface;
+        else if (match(technique,"light")) volumeData.shadingModel =  osgVolume::VolumeSettings::Light;
+    }
+
+    std::string renderer;
+    if (getProperty(cur, "renderer", renderer))
+    {
+        if      (match(renderer,"FixedFunction")) volumeData.technique =  osgVolume::VolumeSettings::FixedFunction;
+        else if (match(renderer,"RayTraced")) volumeData.technique =  osgVolume::VolumeSettings::RayTraced;
+        else if (match(renderer,"MultiPass")) volumeData.technique =  osgVolume::VolumeSettings::MultiPass;
+    }
+
+    std::string hull;
+    if (getProperty(cur, "hull", hull))
+    {
+        volumeData.hull = hull;
     }
 
     if (getProperty(cur, "alpha", volumeData.alphaValue)) {}
+    if (getProperty(cur, "exteriorTransparencyFactor", volumeData.exteriorTransparencyFactorValue) || getProperty(cur, "etf", volumeData.exteriorTransparencyFactorValue)) {}
     if (getProperty(cur, "cutoff", volumeData.cutoffValue)) {}
-    if (getProperty(cur, "region", 6, volumeData.region)) {}
+    if (getProperty(cur, "region", volumeData.region)) {}
     if (getProperty(cur, "sampleDensity", volumeData.sampleDensityValue)) {}
     if (getProperty(cur, "sampleDensityWhenMoving", volumeData.sampleDensityWhenMovingValue)) {}
+    if (getProperty(cur, "sampleRatio", volumeData.sampleRatioValue)) {}
+    if (getProperty(cur, "sampleRatioWhenMoving", volumeData.sampleRatioWhenMovingValue)) {}
+
+
+    if (getProperty(cur, "colourModulate", volumeData.colorModulate)) {}
+    if (getProperty(cur, "colorModulate", volumeData.colorModulate)) {}
+
+    std::string operation;
+    if (getProperty(cur, "colorSpaceOperation", operation) || getProperty(cur, "colourSpaceOperation", operation))
+    {
+        if (match(operation,"NO_COLOR_SPACE_OPERATION")) volumeData.colorSpaceOperation = osg::NO_COLOR_SPACE_OPERATION;
+        else if (match(operation,"MODULATE_ALPHA_BY_LUMINANCE")) volumeData.colorSpaceOperation = osg::MODULATE_ALPHA_BY_LUMINANCE;
+        else if (match(operation,"MODULATE_ALPHA_BY_COLOR")) volumeData.colorSpaceOperation = osg::MODULATE_ALPHA_BY_COLOR;
+        else if (match(operation,"REPLACE_ALPHA_WITH_LUMINANCE")) volumeData.colorSpaceOperation = osg::REPLACE_ALPHA_WITH_LUMINANCE;
+        else if (match(operation,"REPLACE_RGB_WITH_LUMINANCE")) volumeData.colorSpaceOperation = osg::REPLACE_RGB_WITH_LUMINANCE;
+    }
+
+
 
     // check for any transfer function required
     std::string transferFunctionFile;
     if (getTrimmedProperty(cur, "tf", transferFunctionFile))
     {
-        volumeData.transferFunction = readTransferFunctionFile(transferFunctionFile, 1.0);
+        volumeData.transferFunction = osgDB::readFile<osg::TransferFunction1D>(transferFunctionFile);
     }
 
     if (getTrimmedProperty(cur, "tf-255", transferFunctionFile))
     {
-        volumeData.transferFunction = readTransferFunctionFile(transferFunctionFile, 1.0/255.0);
+        volumeData.transferFunction = osgDB::readFile<osg::TransferFunction1D>(transferFunctionFile);
     }
 
     if (getProperty(cur, "options", volumeData.options)) {}
@@ -1058,12 +1452,12 @@ void ReaderWriterP3DXML::parseVolume(osgPresentation::SlideShowConstructor& cons
     std::string dragger;
     if (getProperty(cur, "dragger", dragger))
     {
-        if (dragger=="trackball")
+        if (match(dragger,"trackball"))
         {
             volumeData.useTabbedDragger = false;
             volumeData.useTrackballDragger = true;
         }
-        if (dragger=="trackball-box")
+        if (match(dragger,"trackball-box"))
         {
             volumeData.useTabbedDragger = true;
             volumeData.useTrackballDragger = true;
@@ -1075,16 +1469,21 @@ void ReaderWriterP3DXML::parseVolume(osgPresentation::SlideShowConstructor& cons
         }
     }
 
+    osgPresentation::SlideShowConstructor::ScriptData scriptData;
+    getProperties(cur, scriptData);
+
     std::string filename = cur->getTrimmedContents();
     if (!filename.empty())
     {
         constructor.addVolume(filename,
                              positionRead ? positionData : constructor.getModelPositionData(),
-                             volumeData);
+                             volumeData,
+                             scriptData
+                             );
     }
 }
 
-void ReaderWriterP3DXML::parseStereoPair(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur) const
+void ReaderWriterP3DXML::parseStereoPair(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const
 {
 
     OSG_INFO<<"ReaderWriterP3DXML::parseStereoPair()"<<std::endl;
@@ -1099,53 +1498,72 @@ void ReaderWriterP3DXML::parseStereoPair(osgPresentation::SlideShowConstructor& 
     osgPresentation::SlideShowConstructor::ImageData imageDataLeft;// = constructor.getImageData();
     osgPresentation::SlideShowConstructor::ImageData imageDataRight;// = constructor.getImageData();
 
+    getProperties(cur,imageDataLeft);
+    getProperties(cur,imageDataRight);
+
     for(osgDB::XmlNode::Children::iterator itr = cur->children.begin();
         itr != cur->children.end();
         ++itr)
     {
         osgDB::XmlNode* child = itr->get();
 
-        if (child->name == "image_left")
+        if (match(child->name,"image_left"))
         {
             getProperties(child,imageDataLeft);
             filenameLeft = child->getTrimmedContents();
         }
-        if (child->name == "image_right")
+        else if (match(child->name,"imagesequence_left"))
+        {
+            imageDataLeft.imageSequence = true;
+            getProperties(child,imageDataLeft);
+            filenameLeft = child->getTrimmedContents();
+        }
+        else if (match(child->name,"image_right"))
         {
             getProperties(child,imageDataRight);
             filenameRight = child->getTrimmedContents();
+
             getProperties(cur,imageDataRight);
         }
+        else if (match(child->name,"imagesequence_right"))
+        {
+            imageDataRight.imageSequence = true;
+            getProperties(child,imageDataRight);
+            filenameRight = child->getTrimmedContents();
+        }
     }
+
+    osgPresentation::SlideShowConstructor::ScriptData scriptData;
+    getProperties(cur, scriptData);
 
     OSG_INFO<<"    filenameLeft="<<filenameLeft<<std::endl;
     OSG_INFO<<"    filenameRight="<<filenameRight<<std::endl;
 
-
     if (!filenameLeft.empty() && !filenameRight.empty())
         constructor.addStereoImagePair(filenameLeft,imageDataLeft,
                                        filenameRight, imageDataRight,
-                                       positionRead ? positionData : constructor.getImagePositionData());
+                                       positionRead ? positionData : constructor.getImagePositionData(),
+                                       scriptData);
 
 }
 
-bool ReaderWriterP3DXML::getKeyPosition(osgDB::XmlNode*cur, osgPresentation::KeyPosition& keyPosition) const
+bool ReaderWriterP3DXML::getKeyPosition(osgDB::XmlNode* cur, osgPresentation::KeyPosition& keyPosition) const
 {
-    if (cur->name == "key")
+    if (match(cur->name, "key"))
     {
         return getKeyPositionInner(cur, keyPosition);
     }
-    if (cur->name == "escape" ||
-        cur->name == "esc" ||
-        cur->name == "exit")
+    if (match(cur->name, "escape") ||
+        match(cur->name, "esc") ||
+        match(cur->name, "exit"))
     {
-        keyPosition.set(osgGA::GUIEventAdapter::KEY_Escape, 0.0f, 0.0f);
+        keyPosition.set(osgGA::GUIEventAdapter::KEY_Escape, 0.0f, 0.0f, false);
         return true;
     }
     return false;
 }
 
-bool ReaderWriterP3DXML::getKeyPositionInner(osgDB::XmlNode*cur, osgPresentation::KeyPosition& keyPosition) const
+bool ReaderWriterP3DXML::getKeyPositionInner(osgDB::XmlNode* cur, osgPresentation::KeyPosition& keyPosition) const
 {
     // x in range -1 to 1, from left to right
     float x = FLT_MAX;
@@ -1169,38 +1587,59 @@ bool ReaderWriterP3DXML::getKeyPositionInner(osgDB::XmlNode*cur, osgPresentation
         y = v*2.0f-1.0f;
     }
 
+    bool forward_to_devices = false;
+    getProperty(cur, "forward_to_devices", forward_to_devices);
 
     std::string key = cur->getTrimmedContents();
     unsigned int keyValue = 0;
 
-    StringKeyMap::const_iterator itr=_stringKeyMap.find(key);
+    if (key.empty())
+    {
+        OSG_NOTICE<<"Warning: empty <key></key> is invalid, ignoring tag."<<std::endl;
+        return false;
+    }
+
+    StringKeyMap::const_iterator itr=find(_stringKeyMap, key);
     if (itr != _stringKeyMap.end())
     {
         keyValue = itr->second;
     }
+    else if (key.find("0x",0,2)!=std::string::npos)
+    {
+        std::istringstream iss(key);
+        iss>>std::hex>>keyValue;
+        OSG_INFO<<"ReaderWriterP3DXML::getKeyPositionInner() hex result = "<<keyValue<<std::endl;
+    }
+    else if (key.size()>1 && (key[0]>='0' && key[0]<='9'))
+    {
+        std::istringstream iss(key);
+        iss>>keyValue;
+        OSG_INFO<<"ReaderWriterP3DXML::getKeyPositionInner() numeric result = "<<keyValue<<std::endl;
+    }
     else if (key.length()==1)
     {
+        OSG_INFO<<"ReaderWriterP3DXML::getKeyPositionInner() alphanumeric result = "<<keyValue<<std::endl;
         keyValue = key[0];
     }
     else
     {
-        OSG_NOTICE<<"Warning: invalid key used in <key>"<<key<<"</key>, ignoring tag."<<std::endl;
+        OSG_NOTICE<<"Warning: invalid key used in <key>"<<key<<"</key>, ignoring tag. key=["<<key<<"]"<<std::endl;
         return false;
     }
 
-    keyPosition.set(keyValue,x,y);
+    keyPosition.set(keyValue,x,y, forward_to_devices);
     return true;
 }
 
 
-
-
-void ReaderWriterP3DXML::parseLayer(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* root) const
+void ReaderWriterP3DXML::parseTimeout(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* root) const
 {
-    // create a keyPosition just in case we need it.
-    osgPresentation::KeyPosition keyPosition;
+    osg::ref_ptr<osgPresentation::Timeout> timeout = new osgPresentation::Timeout(constructor.getHUDSettings());
 
-    OSG_INFO<<std::endl<<"parseLayer"<<std::endl;
+    // to allow the timeout to be nested with a Layer but still behave like a Layer itself we push the timeout as a Layer, saving the original Layer
+    constructor.pushCurrentLayer(timeout.get());
+
+    OSG_NOTICE<<"parseTimeout"<<std::endl;
 
     float totalIndent = 0.0f;
 
@@ -1209,198 +1648,543 @@ void ReaderWriterP3DXML::parseLayer(osgPresentation::SlideShowConstructor& const
         ++itr)
     {
         osgDB::XmlNode* cur = itr->get();
-        if (cur->name == "run")
+        if (parseLayerChild(constructor, cur, totalIndent))
+        {
+            // no need to do anything
+        }
+        else if (match(cur->name, "timeout_jump"))
+        {
+            osgPresentation::JumpData jumpData;
+            if (getJumpProperties(cur, jumpData))
+            {
+                OSG_NOTICE<<"Timeout Jump "<<jumpData.relativeJump<<","<< jumpData.slideNum<<", "<<jumpData.layerNum<<std::endl;
+                timeout->setActionJumpData(jumpData);
+            }
+        }
+        else if (match(cur->name, "timeout_event"))
+        {
+            osgPresentation::KeyPosition keyPosition;
+            if (getKeyPositionInner( cur, keyPosition))
+            {
+                OSG_NOTICE<<"timeout event ["<<keyPosition._key<<"]"<<std::endl;
+                timeout->setActionKeyPosition(keyPosition);
+            }
+        }
+        else if (match(cur->name, "display_broadcast_event"))
+        {
+            osgPresentation::KeyPosition keyPosition;
+            if (getKeyPositionInner( cur, keyPosition))
+            {
+                OSG_NOTICE<<"display broadcast event ["<<keyPosition._key<<"]"<<std::endl;
+                timeout->setDisplayBroadcastKeyPosition(keyPosition);
+            }
+        }
+        else if (match(cur->name, "dismiss_broadcast_event"))
+        {
+            osgPresentation::KeyPosition keyPosition;
+            if (getKeyPositionInner( cur, keyPosition))
+            {
+                OSG_NOTICE<<"dismiss broadcast event ["<<keyPosition._key<<"]"<<std::endl;
+                timeout->setDismissBroadcastKeyPosition(keyPosition);
+            }
+        }
+        else if (match(cur->name, "timeout_broadcast_event"))
+        {
+            osgPresentation::KeyPosition keyPosition;
+            if (getKeyPositionInner( cur, keyPosition))
+            {
+                OSG_NOTICE<<"timeout broadcast event ["<<keyPosition._key<<"]"<<std::endl;
+                timeout->setActionBroadcastKeyPosition(keyPosition);
+            }
+        }
+        else if (match(cur->name, "idle_duration_before_timeout_display"))
+        {
+            std::istringstream iss(cur->getTrimmedContents());
+            double duration;
+            iss>>duration;
+            if (!iss.fail())
+            {
+                OSG_NOTICE<<"timeout->setIdleDurationBeforeTimeoutDisplay("<<duration<<")"<<std::endl;
+                timeout->setIdleDurationBeforeTimeoutDisplay(duration);
+            }
+        }
+        else if (match(cur->name, "idle_duration_before_timeout_action"))
+        {
+            std::istringstream iss(cur->getTrimmedContents());
+            double duration;
+            iss>>duration;
+            if (!iss.fail())
+            {
+                OSG_NOTICE<<"timeout->setIdleDurationBeforeTimeoutAction("<<duration<<")"<<std::endl;
+                timeout->setIdleDurationBeforeTimeoutAction(duration);
+            }
+        }
+        else if (match(cur->name, "key_starts_timeout_display"))
+        {
+            osgPresentation::KeyPosition keyPosition;
+            if (getKeyPositionInner( cur, keyPosition) && keyPosition._key!=0)
+            {
+                OSG_NOTICE<<"timeout->setKeyStartsTimoutDisplay("<<keyPosition._key<<")"<<std::endl;
+                timeout->setKeyStartsTimoutDisplay(keyPosition._key);
+            }
+        }
+        else if (match(cur->name, "key_dismiss_timeout_display"))
+        {
+            osgPresentation::KeyPosition keyPosition;
+            if (getKeyPositionInner( cur, keyPosition) && keyPosition._key!=0)
+            {
+                OSG_NOTICE<<"timeout->setKeyDismissTimoutDisplay("<<keyPosition._key<<")"<<std::endl;
+                timeout->setKeyDismissTimoutDisplay(keyPosition._key);
+            }
+        }
+        else if (match(cur->name, "key_run_action"))
+        {
+            osgPresentation::KeyPosition keyPosition;
+            if (getKeyPositionInner( cur, keyPosition) && keyPosition._key!=0)
+            {
+                OSG_NOTICE<<"timeout->setKeyRunTimoutAction("<<keyPosition._key<<")"<<std::endl;
+                timeout->setKeyRunTimoutAction(keyPosition._key);
+            }
+        }
+
+    }
+
+    constructor.popCurrentLayer(); // return the parent level
+}
+
+
+bool ReaderWriterP3DXML::parseLayerChild(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur, float& totalIndent) const
+{
+    if (match(cur->name, "newline"))
+    {
+        constructor.translateTextCursor(osg::Vec3(0.0f,-0.05f,0.0f));
+        return true;
+    }
+    else if (match(cur->name, "indent"))
+    {
+        float localIndent = 0.05f;
+        constructor.translateTextCursor(osg::Vec3(localIndent,0.0f,0.0f));
+        totalIndent += localIndent;
+        return true;
+    }
+    else if (match(cur->name, "unindent"))
+    {
+        float localIndent = -0.05f;
+        constructor.translateTextCursor(osg::Vec3(localIndent,0.0f,0.0f));
+        totalIndent += localIndent;
+        return true;
+    }
+    else if (match(cur->name, "bullet"))
+    {
+        OSG_INFO<<"bullet ["<<cur->contents<<"]"<<std::endl;
+        osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getTextPositionData();
+        bool positionRead = getProperties(cur,positionData);
+
+        osgPresentation::SlideShowConstructor::FontData fontData = constructor.getTextFontData();
+        bool fontRead = getProperties(cur,fontData);
+
+        osgPresentation::SlideShowConstructor::ScriptData scriptData;
+        getProperties(cur, scriptData);
+
+        constructor.addBullet(cur->contents,
+                                positionRead ? positionData : constructor.getTextPositionData(),
+                                fontRead ? fontData : constructor.getTextFontData(),
+                                scriptData
+                             );
+        return true;
+    }
+    else if (match(cur->name, "paragraph"))
+    {
+        osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getTextPositionData();
+        bool positionRead = getProperties(cur,positionData);
+
+        osgPresentation::SlideShowConstructor::FontData fontData = constructor.getTextFontData();
+        bool fontRead = getProperties(cur,fontData);
+
+        osgPresentation::SlideShowConstructor::ScriptData scriptData;
+        getProperties(cur, scriptData);
+
+        constructor.addParagraph(cur->contents,
+                                    positionRead ? positionData : constructor.getTextPositionData(),
+                                    fontRead ? fontData : constructor.getTextFontData(),
+                                    scriptData
+                                );
+        return true;
+    }
+    else if (match(cur->name, "image"))
+    {
+        osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getImagePositionData();
+        bool positionRead = getProperties(cur,positionData);
+
+        osgPresentation::SlideShowConstructor::ImageData imageData;// = constructor.getImageData();
+        getProperties(cur,imageData);
+
+        osgPresentation::SlideShowConstructor::ScriptData scriptData;
+        getProperties(cur, scriptData);
+
+        constructor.addImage(cur->getTrimmedContents(),
+                                positionRead ? positionData : constructor.getImagePositionData(),
+                                imageData,
+                                scriptData
+                            );
+        return true;
+    }
+    else if (match(cur->name, "imagesequence"))
+    {
+        osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getImagePositionData();
+        bool positionRead = getProperties(cur,positionData);
+
+        osgPresentation::SlideShowConstructor::ImageData imageData;// = constructor.getImageData();
+        imageData.imageSequence = true;
+        getProperties(cur,imageData);
+
+        osgPresentation::SlideShowConstructor::ScriptData scriptData;
+        getProperties(cur, scriptData);
+
+        constructor.addImage(cur->getTrimmedContents(),
+                                positionRead ? positionData : constructor.getImagePositionData(),
+                                imageData,
+                                scriptData
+                            );
+        return true;
+    }
+    else if (match(cur->name, "graph"))
+    {
+        osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getImagePositionData();
+        bool positionRead = getProperties(cur,positionData);
+
+        osgPresentation::SlideShowConstructor::ImageData imageData;// = constructor.getImageData();
+        getProperties(cur,imageData);
+
+        std::string options;
+        getProperty(cur, "options", options);
+
+        osgPresentation::SlideShowConstructor::ScriptData scriptData;
+        getProperties(cur, scriptData);
+
+        constructor.addGraph(cur->getTrimmedContents(),
+                                positionRead ? positionData : constructor.getImagePositionData(),
+                                imageData,
+                                scriptData
+                            );
+        return true;
+    }
+    else if (match(cur->name, "vnc"))
+    {
+        osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getImagePositionData();
+        bool positionRead = getProperties(cur,positionData);
+
+        osgPresentation::SlideShowConstructor::ImageData imageData;// = constructor.getImageData();
+        getProperties(cur,imageData);
+
+        std::string password;
+        getProperty(cur, "password", password);
+
+        osgPresentation::SlideShowConstructor::ScriptData scriptData;
+        getProperties(cur, scriptData);
+
+        constructor.addVNC(cur->getTrimmedContents(),
+                                positionRead ? positionData : constructor.getImagePositionData(),
+                                imageData,
+                                password,
+                                scriptData
+                            );
+        return true;
+    }
+    else if (match(cur->name, "browser"))
+    {
+        osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getImagePositionData();
+        bool positionRead = getProperties(cur,positionData);
+
+        osgPresentation::SlideShowConstructor::ImageData imageData;// = constructor.getImageData();
+        getProperties(cur,imageData);
+
+        osgPresentation::SlideShowConstructor::ScriptData scriptData;
+        getProperties(cur, scriptData);
+
+        constructor.addBrowser(cur->getTrimmedContents(),
+                                positionRead ? positionData : constructor.getImagePositionData(),
+                                imageData,
+                                scriptData);
+        return true;
+    }
+    else if (match(cur->name, "pdf"))
+    {
+        osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getImagePositionData();
+        bool positionRead = getProperties(cur,positionData);
+
+        osgPresentation::SlideShowConstructor::ImageData imageData;// = constructor.getImageData();
+        getProperties(cur,imageData);
+
+        osgPresentation::SlideShowConstructor::ScriptData scriptData;
+        getProperties(cur, scriptData);
+
+        constructor.addPDF(cur->getTrimmedContents(),
+                                positionRead ? positionData : constructor.getImagePositionData(),
+                                imageData,
+                                scriptData
+                          );
+        return true;
+    }
+    else if (match(cur->name, "stereo_pair"))
+    {
+        parseStereoPair(constructor, cur);
+        return true;
+    }
+    else if (match(cur->name, "model"))
+    {
+        parseModel(constructor, cur);
+        return true;
+    }
+    else if (match(cur->name, "model-script"))
+    {
+        parseModelScript(constructor, cur);
+        return true;
+    }
+    else if (match(cur->name, "volume"))
+    {
+        parseVolume(constructor, cur);
+        return true;
+    }
+    else if (match(cur->name, "duration"))
+    {
+        constructor.setLayerDuration(osg::asciiToDouble(cur->contents.c_str()));
+        return true;
+    }
+    else if (match(cur->name, "property_animation"))
+    {
+        osg::ref_ptr<osgPresentation::PropertyAnimation> pa = new osgPresentation::PropertyAnimation;
+        if (parsePropertyAnimation(cur,*pa))
+        {
+            constructor.addPropertyAnimation(osgPresentation::SlideShowConstructor::CURRENT_LAYER, pa.get());
+        }
+        return true;
+    }
+    else if (match(cur->name, "properties"))
+    {
+        if (!constructor.getCurrentLayer()) constructor.addLayer();
+        if (constructor.getCurrentLayer())
+        {
+            osg::ref_ptr<osg::UserDataContainer> udc = constructor.getCurrentLayer()->getOrCreateUserDataContainer();
+            if (parseProperties(cur, *udc))
+            {
+                OSG_NOTICE<<"Assigned properties to Layer"<<std::endl;
+            }
+        }
+        return true;
+    }
+
+    return false;
+}
+
+
+void ReaderWriterP3DXML::parseSwitch(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const
+{
+   osg::ref_ptr<osg::Switch> switchNode = new osg::Switch;;
+
+    // to allow the timeout to be nested with a Layer but still behave like a Layer itself we push the timeout as a Layer, saving the original Layer
+    constructor.pushCurrentLayer(switchNode.get());
+
+    OSG_NOTICE<<"parseSwitch"<<std::endl;
+
+    parseLayer(constructor, cur);
+
+    switchNode->setSingleChildOn(0);
+
+    constructor.popCurrentLayer(); // return the parent level
+}
+
+void ReaderWriterP3DXML::parseLayer(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* root) const
+{
+    OSG_INFO<<std::endl<<"parseLayer"<<std::endl;
+
+    float totalIndent = 0.0f;
+
+    osgPresentation::SlideShowConstructor::ScriptData scriptData;
+    if (getProperties(root, scriptData))
+    {
+        for(osgPresentation::SlideShowConstructor::ScriptData::Scripts::iterator itr = scriptData.scripts.begin();
+            itr != scriptData.scripts.end();
+            ++itr)
+        {
+            constructor.addScriptCallback(osgPresentation::SlideShowConstructor::CURRENT_LAYER, itr->first, itr->second);
+        }
+    }
+
+    for(osgDB::XmlNode::Children::iterator itr = root->children.begin();
+        itr != root->children.end();
+        ++itr)
+    {
+        osgDB::XmlNode* cur = itr->get();
+        if (parseLayerChild(constructor, cur, totalIndent))
+        {
+            // no need to do anything
+        }
+        else if (match(cur->name, "switch"))
+        {
+            parseSwitch(constructor, cur);
+        }
+        else if (match(cur->name, "timeout"))
+        {
+            parseTimeout(constructor, cur);
+        }
+        else if (match(cur->name, "run"))
         {
             OSG_INFO<<"run ["<<cur->contents<<"]"<<std::endl;
             constructor.addLayerRunString(cur->contents);
         }
-        else if (cur->name == "jump")
+        else if (match(cur->name, "jump"))
         {
             OSG_INFO<<"Parsed Jump "<<std::endl;
 
-            bool relativeJump = true;
-            int slideNum = 0;
-            int layerNum = 0;
-            if (getJumpProperties(cur, relativeJump, slideNum, layerNum))
+            osgPresentation::JumpData jumpData;
+            if (getJumpProperties(cur, jumpData))
             {
-                OSG_INFO<<"Layer Jump "<<relativeJump<<","<< slideNum<<", "<<layerNum<<std::endl;
+                OSG_INFO<<"Layer Jump "<<jumpData.relativeJump<<","<< jumpData.slideNum<<", "<<jumpData.layerNum<<std::endl;
 
-                constructor.setLayerJump(relativeJump, slideNum, layerNum);
+                constructor.setLayerJump(jumpData);
             }
         }
-        else if (cur->name == "click_to_run")
+        else if (match(cur->name, "click_to_run"))
         {
-            bool relativeJump = true;
-            int slideNum = 0;
-            int layerNum = 0;
-            getJumpProperties(cur, relativeJump, slideNum, layerNum);
+            osgPresentation::JumpData jumpData;
+            getJumpProperties(cur, jumpData);
 
             OSG_INFO<<"click_to_run ["<<cur->contents<<"]"<<std::endl;
-            constructor.layerClickToDoOperation(cur->contents,osgPresentation::RUN, relativeJump, slideNum, layerNum);
+            constructor.layerClickToDoOperation(cur->contents,osgPresentation::RUN, jumpData);
         }
-        else if (cur->name == "click_to_load")
+        else if (match(cur->name,"forward_mouse_event_to_device") || match(cur->name,"forward_event_to_device"))
         {
-            bool relativeJump = true;
-            int slideNum = 0;
-            int layerNum = 0;
-            getJumpProperties(cur, relativeJump, slideNum, layerNum);
+            osgPresentation::JumpData jumpData;
+
+            OSG_INFO<<"forward_mouse_event_to_device ["<<cur->contents<<"]"<<std::endl;
+            constructor.layerClickToDoOperation(cur->contents,osgPresentation::FORWARD_MOUSE_EVENT, jumpData);
+        }
+        else if (match(cur->name,"forward_touch_event_to_device"))
+        {
+            osgPresentation::JumpData jumpData;
+
+            OSG_INFO<<"forward_touch_event_to_device ["<<cur->contents<<"]"<<std::endl;
+            constructor.layerClickToDoOperation(cur->contents,osgPresentation::FORWARD_TOUCH_EVENT, jumpData);
+        }
+        else if (match(cur->name, "click_to_load"))
+        {
+            osgPresentation::JumpData jumpData;
+            getJumpProperties(cur, jumpData);
 
             OSG_INFO<<"click_to_load ["<<cur->contents<<"]"<<std::endl;
-            constructor.layerClickToDoOperation(cur->contents,osgPresentation::LOAD, relativeJump, slideNum, layerNum);
+            constructor.layerClickToDoOperation(cur->contents,osgPresentation::LOAD, jumpData);
         }
 
-        else if (cur->name == "click_to_event")
+        else if (match(cur->name, "click_to_event"))
         {
-            bool relativeJump = true;
-            int slideNum = 0;
-            int layerNum = 0;
-            getJumpProperties(cur, relativeJump, slideNum, layerNum);
+            osgPresentation::JumpData jumpData;
+            getJumpProperties(cur, jumpData);
 
+            osgPresentation::KeyPosition keyPosition;
             if (getKeyPositionInner( cur, keyPosition))
             {
                 OSG_INFO<<"click_to_event ["<<keyPosition._key<<"]"<<std::endl;
-                constructor.layerClickEventOperation(keyPosition, relativeJump, slideNum, layerNum);
+                constructor.layerClickEventOperation(keyPosition, jumpData);
             }
         }
 
-        else if (cur->name == "click_to_jump")
+        else if (match(cur->name, "click_to_jump"))
         {
-            bool relativeJump = true;
-            int slideNum = 0;
-            int layerNum = 0;
-            getJumpProperties(cur, relativeJump, slideNum, layerNum);
+            osgPresentation::JumpData jumpData;
+            getJumpProperties(cur, jumpData);
 
-            constructor.layerClickEventOperation(osgPresentation::JUMP, relativeJump, slideNum, layerNum);
+            constructor.layerClickEventOperation(osgPresentation::JUMP, jumpData);
         }
 
-        else if (cur->name == "newline")
+        else if (match(cur->name, "key_to_run"))
         {
-            constructor.translateTextCursor(osg::Vec3(0.0f,-0.05f,0.0f));
+            int key;
+            if (getKeyProperty(cur, "key", key))
+            {
+                osgPresentation::JumpData jumpData;
+                getJumpProperties(cur, jumpData);
+
+                OSG_NOTICE<<"key_to_run ["<<cur->contents<<"], key="<<key<<std::endl;
+                constructor.keyToDoOperation(osgPresentation::SlideShowConstructor::CURRENT_LAYER, key, cur->contents,osgPresentation::RUN, jumpData);
+            }
         }
-        else if (cur->name == "indent")
+        else if (match(cur->name, "key_to_load"))
         {
-            float localIndent = 0.05f;
-            constructor.translateTextCursor(osg::Vec3(localIndent,0.0f,0.0f));
-            totalIndent += localIndent;
+            int key;
+            if (getKeyProperty(cur, "key", key))
+            {
+                osgPresentation::JumpData jumpData;
+                getJumpProperties(cur, jumpData);
+
+                OSG_NOTICE<<"key_to_load ["<<cur->contents<<"]"<<std::endl;
+                constructor.keyToDoOperation(osgPresentation::SlideShowConstructor::CURRENT_LAYER, key, cur->contents,osgPresentation::LOAD, jumpData);
+            }
         }
-        else if (cur->name == "unindent")
+
+        else if (match(cur->name, "key_to_event"))
         {
-            float localIndent = -0.05f;
-            constructor.translateTextCursor(osg::Vec3(localIndent,0.0f,0.0f));
-            totalIndent += localIndent;
+            int key;
+            if (getKeyProperty(cur, "key", key))
+            {
+                osgPresentation::JumpData jumpData;
+                getJumpProperties(cur, jumpData);
+
+                osgPresentation::KeyPosition keyPosition;
+                if (getKeyPositionInner( cur, keyPosition))
+                {
+                    OSG_NOTICE<<"key_to_event ["<<keyPosition._key<<"]"<<std::endl;
+                    constructor.keyEventOperation(osgPresentation::SlideShowConstructor::CURRENT_LAYER, key, keyPosition, jumpData);
+                }
+            }
         }
-        else if (cur->name == "bullet")
+
+        else if (match(cur->name, "key_to_jump"))
         {
-            OSG_INFO<<"bullet ["<<cur->contents<<"]"<<std::endl;
-            osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getTextPositionData();
-            bool positionRead = getProperties(cur,positionData);
+            int key;
+            if (getKeyProperty(cur, "key", key))
+            {
+                osgPresentation::JumpData jumpData;
+                getJumpProperties(cur, jumpData);
 
-            osgPresentation::SlideShowConstructor::FontData fontData = constructor.getTextFontData();
-            bool fontRead = getProperties(cur,fontData);
+                OSG_NOTICE<<"key_to_jump"<<std::endl;
 
-            constructor.addBullet(cur->contents,
-                                    positionRead ? positionData : constructor.getTextPositionData(),
-                                    fontRead ? fontData : constructor.getTextFontData());
+                constructor.keyEventOperation(osgPresentation::SlideShowConstructor::CURRENT_LAYER, key, osgPresentation::JUMP, jumpData);
+            }
+            else
+            {
+                OSG_NOTICE<<"key_to_jump failed."<<std::endl;
+            }
         }
-        else if (cur->name == "paragraph")
+        else if (match(cur->name, "script_file"))
         {
-            osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getTextPositionData();
-            bool positionRead = getProperties(cur,positionData);
-
-            osgPresentation::SlideShowConstructor::FontData fontData = constructor.getTextFontData();
-            bool fontRead = getProperties(cur,fontData);
-
-            constructor.addParagraph(cur->contents,
-                                        positionRead ? positionData : constructor.getTextPositionData(),
-                                        fontRead ? fontData : constructor.getTextFontData());
+            std::string name;
+            getProperty(cur, "name", name);
+            constructor.addScriptFile(name, cur->contents);
         }
-        else if (cur->name == "image")
+        else if (match(cur->name, "script"))
         {
-            osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getImagePositionData();
-            bool positionRead = getProperties(cur,positionData);
-
-            osgPresentation::SlideShowConstructor::ImageData imageData;// = constructor.getImageData();
-            getProperties(cur,imageData);
-
-            constructor.addImage(cur->getTrimmedContents(),
-                                    positionRead ? positionData : constructor.getImagePositionData(),
-                                    imageData);
+            std::string name;
+            getProperty(cur, "name", name);
+            std::string language("lua");
+            getProperty(cur, "language", language);
+            constructor.addScript(name, language, cur->contents);
         }
-        else if (cur->name == "graph")
+        else if (match(cur->name, "run_script_file"))
         {
-            osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getImagePositionData();
-            bool positionRead = getProperties(cur,positionData);
-
-            osgPresentation::SlideShowConstructor::ImageData imageData;// = constructor.getImageData();
-            getProperties(cur,imageData);
-
-            std::string options;
-            getProperty(cur, "options", options);
-
-            constructor.addGraph(cur->getTrimmedContents(),
-                                 positionRead ? positionData : constructor.getImagePositionData(),
-                                 imageData);
+            parseRunScriptFile(constructor, cur);
         }
-        else if (cur->name == "vnc")
+        else if (match(cur->name, "run_script"))
         {
-            osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getImagePositionData();
-            bool positionRead = getProperties(cur,positionData);
-
-            osgPresentation::SlideShowConstructor::ImageData imageData;// = constructor.getImageData();
-            getProperties(cur,imageData);
-
-            std::string password;
-            getProperty(cur, "password", password);
-
-            constructor.addVNC(cur->getTrimmedContents(),
-                                    positionRead ? positionData : constructor.getImagePositionData(),
-                                    imageData,
-                                    password
-                              );
+            parseRunScript(constructor, cur);
         }
-        else if (cur->name == "browser")
+        else
         {
-            osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getImagePositionData();
-            bool positionRead = getProperties(cur,positionData);
-
-            osgPresentation::SlideShowConstructor::ImageData imageData;// = constructor.getImageData();
-            getProperties(cur,imageData);
-
-            constructor.addBrowser(cur->getTrimmedContents(),
-                                    positionRead ? positionData : constructor.getImagePositionData(),
-                                    imageData);
-        }
-        else if (cur->name == "pdf")
-        {
-            osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getImagePositionData();
-            bool positionRead = getProperties(cur,positionData);
-
-            osgPresentation::SlideShowConstructor::ImageData imageData;// = constructor.getImageData();
-            getProperties(cur,imageData);
-
-            constructor.addPDF(cur->getTrimmedContents(),
-                                    positionRead ? positionData : constructor.getImagePositionData(),
-                                    imageData);
-        }
-        else if (cur->name == "stereo_pair")
-        {
-            parseStereoPair(constructor, cur);
-        }
-        else if (cur->name == "model")
-        {
-            parseModel(constructor, cur);
-        }
-        else if (cur->name == "volume")
-        {
-            parseVolume(constructor, cur);
-        }
-        else if (cur->name == "duration")
-        {
-            constructor.setLayerDuration(osg::asciiToDouble(cur->contents.c_str()));
-        }
-        else if (getKeyPosition(cur, keyPosition))
-        {
-            constructor.addLayerKey(keyPosition);
+            osgPresentation::KeyPosition keyPosition;
+            if (getKeyPosition(cur, keyPosition))
+            {
+                constructor.addLayerKey(keyPosition);
+            }
         }
     }
 
@@ -1409,9 +2193,22 @@ void ReaderWriterP3DXML::parseLayer(osgPresentation::SlideShowConstructor& const
         constructor.translateTextCursor(osg::Vec3(-totalIndent,0.0f,0.0f));
     }
 
+    std::string name;
+    if (getProperty(root, "layer_name", name))
+    {
+        if (constructor.getCurrentLayer())
+        {
+            constructor.getCurrentLayer()->setUserValue("name",name);
+            OSG_NOTICE<<"Setting current layers name "<<name<<std::endl;
+        }
+        else
+        {
+            OSG_NOTICE<<"getCurrentSlide() returns NULL, unable to set name "<<std::endl;
+        }
+    }
 }
 
-void ReaderWriterP3DXML::parseBullets(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur, bool inheritPreviousLayers, bool defineAsBaseLayer) const
+void ReaderWriterP3DXML::parseBullets(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur, bool inheritPreviousLayers, bool defineAsBaseLayer) const
 {
     constructor.addLayer(inheritPreviousLayers, defineAsBaseLayer);
 
@@ -1422,13 +2219,18 @@ void ReaderWriterP3DXML::parseBullets(osgPresentation::SlideShowConstructor& con
     osgPresentation::SlideShowConstructor::FontData fontData = constructor.getTextFontData();
     bool fontRead = getProperties(cur,fontData);
 
+    osgPresentation::SlideShowConstructor::ScriptData scriptData;
+    getProperties(cur,scriptData);
+
     constructor.addBullet(cur->contents,
                             positionRead ? positionData : constructor.getTextPositionData(),
-                            fontRead ? fontData : constructor.getTextFontData());
+                            fontRead ? fontData : constructor.getTextFontData(),
+                            scriptData
+                         );
 }
 
 
-void ReaderWriterP3DXML::parseText(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur, bool inheritPreviousLayers, bool defineAsBaseLayer) const
+void ReaderWriterP3DXML::parseText(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur, bool inheritPreviousLayers, bool defineAsBaseLayer) const
 {
     constructor.addLayer(inheritPreviousLayers, defineAsBaseLayer);
 
@@ -1439,12 +2241,17 @@ void ReaderWriterP3DXML::parseText(osgPresentation::SlideShowConstructor& constr
     osgPresentation::SlideShowConstructor::FontData fontData = constructor.getTextFontData();
     bool fontRead = getProperties(cur,fontData);
 
+    osgPresentation::SlideShowConstructor::ScriptData scriptData;
+    getProperties(cur,scriptData);
+
     constructor.addParagraph(cur->contents,
                             positionRead ? positionData : constructor.getTextPositionData(),
-                            fontRead ? fontData : constructor.getTextFontData());
+                            fontRead ? fontData : constructor.getTextFontData(),
+                            scriptData
+                            );
 }
 
-void ReaderWriterP3DXML::parsePage(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur) const
+void ReaderWriterP3DXML::parsePage(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const
 {
     constructor.addSlide();
 
@@ -1479,12 +2286,17 @@ void ReaderWriterP3DXML::parsePage(osgPresentation::SlideShowConstructor& constr
     osgPresentation::SlideShowConstructor::FontData fontData = constructor.getTextFontData();
     bool fontRead = getProperties(cur,fontData);
 
+    osgPresentation::SlideShowConstructor::ScriptData scriptData;
+    getProperties(cur, scriptData);
+
     constructor.addParagraph(cur->contents,
                             positionRead ? positionData : constructor.getTextPositionData(),
-                            fontRead ? fontData : constructor.getTextFontData());
+                            fontRead ? fontData : constructor.getTextFontData(),
+                            scriptData
+                            );
 }
 
-void ReaderWriterP3DXML::parsePdfDocument(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode*cur) const
+void ReaderWriterP3DXML::parsePdfDocument(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const
 {
     std::string title;
     getProperty(cur, "title", title);
@@ -1520,7 +2332,10 @@ void ReaderWriterP3DXML::parsePdfDocument(osgPresentation::SlideShowConstructor&
     imageData.page = 0;
     getProperties(cur,imageData);
 
-    osg::Image* image = constructor.addInteractiveImage(cur->contents, positionData, imageData);
+    osgPresentation::SlideShowConstructor::ScriptData scriptData;
+    getProperties(cur, scriptData);
+
+    osg::Image* image = constructor.addInteractiveImage(cur->contents, positionData, imageData, scriptData);
     osgWidget::PdfImage* pdfImage = dynamic_cast<osgWidget::PdfImage*>(image);
     if (pdfImage)
     {
@@ -1554,7 +2369,7 @@ void ReaderWriterP3DXML::parsePdfDocument(osgPresentation::SlideShowConstructor&
 
                 constructor.addLayer(true,false);
 
-                constructor.addPDF(cur->getTrimmedContents(), positionData, imageData);
+                constructor.addPDF(cur->getTrimmedContents(), positionData, imageData, scriptData);
 
             }
         }
@@ -1570,6 +2385,17 @@ void ReaderWriterP3DXML::parseSlide (osgPresentation::SlideShowConstructor& cons
     // create a keyPosition just in case we need it.
     osgPresentation::KeyPosition keyPosition;
 
+    osgPresentation::SlideShowConstructor::ScriptData scriptData;
+    if (getProperties(root, scriptData))
+    {
+        for(osgPresentation::SlideShowConstructor::ScriptData::Scripts::iterator itr = scriptData.scripts.begin();
+            itr != scriptData.scripts.end();
+            ++itr)
+        {
+            constructor.addScriptCallback(osgPresentation::SlideShowConstructor::CURRENT_SLIDE, itr->first, itr->second);
+        }
+    }
+
     for(osgDB::XmlNode::Children::iterator itr = root->children.begin();
         itr != root->children.end();
         ++itr)
@@ -1578,7 +2404,7 @@ void ReaderWriterP3DXML::parseSlide (osgPresentation::SlideShowConstructor& cons
 
         if (parseTitles)
         {
-            if (cur->name == "title")
+            if (match(cur->name, "title"))
             {
                 osgPresentation::SlideShowConstructor::PositionData positionData = constructor.getTitlePositionData();
                 bool positionRead = getProperties(cur,positionData);
@@ -1590,7 +2416,7 @@ void ReaderWriterP3DXML::parseSlide (osgPresentation::SlideShowConstructor& cons
                                           positionRead ? positionData : constructor.getTitlePositionData(),
                                           fontRead ? fontData : constructor.getTitleFontData());
             }
-            else if (cur->name == "background")
+            else if (match(cur->name, "background"))
             {
                 constructor.setSlideBackground(cur->contents);
 
@@ -1602,33 +2428,50 @@ void ReaderWriterP3DXML::parseSlide (osgPresentation::SlideShowConstructor& cons
                     constructor.setSlideBackgrondHUD(hud);
                 }
             }
-            else if (cur->name == "bgcolor")
+            else if (match(cur->name, "bgcolor"))
             {
                 constructor.setBackgroundColor(mapStringToColor(cur->contents),true);
             }
-            else if (cur->name == "textcolor")
+            else if (match(cur->name, "textcolor"))
             {
                 constructor.setTextColor(mapStringToColor(cur->contents));
             }
         }
         if (parseLayers)
         {
-            if (cur->name == "base")
+            if (match(cur->name, "base"))
             {
                 constructor.addLayer(true, true);
+                std::string inherit;
+                if (getProperty(cur, "inherit", inherit) && !inherit.empty() && _templateMap.count(inherit)!=0)
+                {
+                    parseLayer(constructor, _templateMap[inherit].get());
+                }
                 parseLayer (constructor, cur);
+
             }
-            else if (cur->name == "layer")
+            else if (match(cur->name, "layer"))
             {
                 constructor.addLayer(true, false);
+                std::string inherit;
+                if (getProperty(cur, "inherit", inherit) && !inherit.empty() && _templateMap.count(inherit)!=0)
+                {
+                    parseLayer(constructor, _templateMap[inherit].get());
+                }
+
                 parseLayer (constructor, cur);
             }
-            else if (cur->name == "clean_layer")
+            else if (match(cur->name, "clean_layer"))
             {
                 constructor.addLayer(false, false);
+                std::string inherit;
+                if (getProperty(cur, "inherit", inherit) && !inherit.empty() && _templateMap.count(inherit)!=0)
+                {
+                    parseLayer(constructor, _templateMap[inherit].get());
+                }
                 parseLayer (constructor, cur);
             }
-            else if (cur->name == "modify_layer")
+            else if (match(cur->name, "modify_layer"))
             {
                 int layerNum;
                 if (getProperty(cur, "layer", layerNum))
@@ -1642,18 +2485,74 @@ void ReaderWriterP3DXML::parseSlide (osgPresentation::SlideShowConstructor& cons
 
                 parseLayer (constructor, cur);
             }
-            else if (cur->name == "bullets")
+            else if (match(cur->name, "bullets"))
             {
                 parseBullets (constructor, cur,true, false);
             }
-            else if (cur->name == "duration")
+            else if (match(cur->name, "duration"))
             {
                 constructor.setSlideDuration(osg::asciiToDouble(cur->contents.c_str()));
+            }
+            else if (match(cur->name, "property_animation"))
+            {
+                osg::ref_ptr<osgPresentation::PropertyAnimation> pa = new osgPresentation::PropertyAnimation;
+                if (parsePropertyAnimation(cur,*pa))
+                {
+                    constructor.addPropertyAnimation(osgPresentation::SlideShowConstructor::CURRENT_SLIDE, pa.get());
+                }
+            }
+            else if (match(cur->name, "properties"))
+            {
+                if (!constructor.getCurrentSlide()) constructor.addSlide();
+                if (constructor.getCurrentSlide())
+                {
+                    osg::ref_ptr<osg::UserDataContainer> udc = constructor.getCurrentSlide()->getOrCreateUserDataContainer();
+                    if (parseProperties(cur, *udc))
+                    {
+                        OSG_NOTICE<<"Assigned properties to Slide"<<std::endl;
+                    }
+                }
+            }
+            else if (match(cur->name, "script_file"))
+            {
+                std::string name;
+                getProperty(cur, "name", name);
+                constructor.addScriptFile(name, cur->contents);
+            }
+            else if (match(cur->name, "script"))
+            {
+                std::string name;
+                getProperty(cur, "name", name);
+                std::string language("lua");
+                getProperty(cur, "language", language);
+                constructor.addScript(name, language, cur->contents);
+            }
+            else if (match(cur->name, "run_script_file"))
+            {
+                parseRunScriptFile(constructor, cur);
+            }
+            else if (match(cur->name, "run_script"))
+            {
+                parseRunScript(constructor, cur);
             }
             else if (getKeyPosition(cur, keyPosition))
             {
                 constructor.addSlideKey(keyPosition);
             }
+        }
+    }
+
+    std::string name;
+    if (getProperty(root, "slide_name", name))
+    {
+        if (constructor.getCurrentSlide())
+        {
+            constructor.getCurrentSlide()->setUserValue("name",name);
+            OSG_NOTICE<<"Setting current slide name "<<name<<std::endl;
+        }
+        else
+        {
+            OSG_NOTICE<<"getCurrentSlide() returns NULL, unable to set name "<<std::endl;
         }
     }
 
@@ -1663,8 +2562,47 @@ void ReaderWriterP3DXML::parseSlide (osgPresentation::SlideShowConstructor& cons
     return;
 }
 
-#include <iostream>
+void ReaderWriterP3DXML::parseRunScriptFile(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const
+{
+    std::string function = "";
+    getProperty(cur, "function", function);
 
+    osg::ref_ptr<osg::Script> script = osgDB::readFile<osg::Script>(cur->getTrimmedContents());
+    if (script.valid())
+    {
+        osg::ScriptEngine* se = constructor.getOrCreateScriptEngine(script->getLanguage());
+        if (se)
+        {
+            osg::Parameters inputParameters, outputParameters;
+            se->run(script.get(), function, inputParameters, outputParameters);
+        }
+    }
+}
+
+void ReaderWriterP3DXML::parseRunScript(osgPresentation::SlideShowConstructor& constructor, osgDB::XmlNode* cur) const
+{
+    std::string language = "lua";
+    getProperty(cur, "language", language);
+
+    std::string function = "";
+    getProperty(cur, "function", function);
+
+    std::string scriptContents = cur->contents;
+
+    if (!scriptContents.empty())
+    {
+        osg::ref_ptr<osg::Script> script = new osg::Script;
+        script->setLanguage(language);
+        script->setScript(scriptContents);
+
+        osg::ScriptEngine* se = constructor.getOrCreateScriptEngine(language);
+        if (se)
+        {
+            osg::Parameters inputParameters, outputParameters;
+            se->run(script.get(), function, inputParameters, outputParameters);
+        }
+    }
+}
 
 struct MyFindFileCallback : public osgDB::FindFileCallback
 {
@@ -1794,7 +2732,12 @@ class MyReadFileCallback : public virtual osgDB::ReadFileCallback
             OSG_INFO<<"Trying server file "<<filename<<std::endl;
 
             osgDB::ReaderWriter::ReadResult result;
-            osgDB::ReaderWriter* rw = osgDB::Registry::instance()->getReaderWriterForExtension("curl");
+
+            // get a specific readerwriter capable of handling the protocol and extension, will return a registered fallback readerwriter for extension '*'
+            osgDB::ReaderWriter* rw = osgDB::Registry::instance()->getReaderWriterForProtocolAndExtension(
+                osgDB::getServerProtocol(filename),
+                osgDB::getFileExtension(filename));
+
             if (!rw) return osgDB::ReaderWriter::ReadResult::FILE_NOT_HANDLED;
 
             switch(type)
@@ -1858,7 +2801,7 @@ class MyReadFileCallback : public virtual osgDB::ReadFileCallback
                 ++itr)
             {
                 const std::string& path = *itr;
-                std::string newpath = path.empty() ? filename : osgDB::concatPaths(path, filename);
+                std::string newpath = osgDB::containsServerAddress(filename) ? filename : path.empty() ? filename : osgDB::concatPaths(path, filename);
                 osgDB::ReaderWriter::ReadResult result;
                 if (osgDB::containsServerAddress(newpath))
                 {
@@ -1941,6 +2884,13 @@ class MyReadFileCallback : public virtual osgDB::ReadFileCallback
 
             OSG_INFO<<"   MyReadFileCallback::reading file C"<<filename<<std::endl;
 
+            // so we did not find anything, neither remote nor local, so try to open file directly, if it has an absolute path.
+            if (osgDB::isAbsolutePath(filename))
+            {
+                osgDB::ReaderWriter::ReadResult result = readLocal(type, filename, options);
+                if (result.success()) return result;
+            }
+
             _objectCache[filename] = 0;
 
             return osgDB::ReaderWriter::ReadResult::FILE_NOT_FOUND;
@@ -2022,6 +2972,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterP3DXML::readNode(std::istream& fin, 
 
     osg::ref_ptr<osgDB::ReaderWriter::Options> local_opt = options ? static_cast<osgDB::ReaderWriter::Options*>(options->clone(osg::CopyOp::SHALLOW_COPY)) : new Options;
     local_opt->setReadFileCallback(new MyReadFileCallback);
+    local_opt->setFindFileCallback(new MyFindFileCallback);
 
     return readNode(input, local_opt.get());
 }
@@ -2059,7 +3010,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterP3DXML::readNode(osgDB::XmlNode::Inp
         itr != doc->children.end() && !root;
         ++itr)
     {
-        if ((*itr)->name=="presentation") root = itr->get();
+        if (match((*itr)->name,"presentation")) root = itr->get();
     }
 
     if (root == NULL)
@@ -2068,7 +3019,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterP3DXML::readNode(osgDB::XmlNode::Inp
             return ReadResult::FILE_NOT_HANDLED;
     }
 
-    if (root->name!="presentation")
+    if (!match(root->name,"presentation"))
     {
             fprintf(stderr,"document of the wrong type, root node != presentation");
             return ReadResult::FILE_NOT_HANDLED;
@@ -2081,7 +3032,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterP3DXML::readNode(osgDB::XmlNode::Inp
         ++itr)
     {
         osgDB::XmlNode* cur = itr->get();
-        if (cur->name == "holding_slide")
+        if (match(cur->name, "holding_slide"))
         {
             hasHoldingSlide = true;
         }
@@ -2140,7 +3091,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterP3DXML::readNode(osgDB::XmlNode::Inp
             {
                 osgPresentation::SlideEventHandler* seh = new osgPresentation::SlideEventHandler;
                 seh->set(presentation_node.get());
-                presentation_node->setEventCallback(seh);
+                presentation_node->addEventCallback(seh);
             }
         }
         return presentation_node.release();
@@ -2160,13 +3111,15 @@ osg::Node* ReaderWriterP3DXML::parseXmlGraph(osgDB::XmlNode* root, bool readOnly
 
     osgDB::FilePathList previousPaths = osgDB::getDataFilePathList();
 
+    bool env_tag_suppressed = false || (options && ((options->getPluginStringData("suppressEnvTags") == "1") || (match(options->getPluginStringData("suppressEnvTags"),"true"))));
+
     for(osgDB::XmlNode::Children::iterator itr = root->children.begin();
         itr != root->children.end();
         ++itr)
     {
         osgDB::XmlNode* cur = itr->get();
 
-        if (cur->name=="env")
+        if (match(cur->name,"env") && !env_tag_suppressed)
         {
             char* str = strdup(cur->contents.c_str());
             OSG_INFO<<"putenv("<<str<<")"<<std::endl;
@@ -2191,7 +3144,7 @@ osg::Node* ReaderWriterP3DXML::parseXmlGraph(osgDB::XmlNode* root, bool readOnly
     {
         osgDB::XmlNode* cur = itr->get();
 
-        if (cur->name == "path")
+        if (match(cur->name, "path"))
         {
             std::string newpath = expandEnvVarsInFileName(cur->contents);
 
@@ -2225,19 +3178,45 @@ osg::Node* ReaderWriterP3DXML::parseXmlGraph(osgDB::XmlNode* root, bool readOnly
     {
         osgDB::XmlNode* cur = itr->get();
 
-        if (cur->name == "name")
+        if (match(cur->name, "script_engine"))
+        {
+            constructor.addScriptEngine(cur->contents);
+        }
+        else if (match(cur->name, "script_file"))
+        {
+            std::string name;
+            getProperty(cur, "name", name);
+            constructor.addScriptFile(name, cur->contents);
+        }
+        else if (match(cur->name, "script"))
+        {
+            std::string name;
+            getProperty(cur, "name", name);
+            std::string language("lua");
+            getProperty(cur, "language", language);
+            constructor.addScript(name, language, cur->contents);
+        }
+        else if (match(cur->name, "run_script_file"))
+        {
+            parseRunScriptFile(constructor, cur);
+        }
+        else if (match(cur->name, "run_script"))
+        {
+            parseRunScript(constructor, cur);
+        }
+        else if (match(cur->name, "name"))
         {
             constructor.setPresentationName(cur->contents);
         }
-        else if (cur->name == "loop")
+        else if (match(cur->name, "loop"))
         {
             constructor.setLoopPresentation(true);
         }
-        else if (cur->name == "auto")
+        else if (match(cur->name, "auto"))
         {
             constructor.setAutoSteppingActive(true);
         }
-        else if (cur->name == "title-settings")
+        else if (match(cur->name, "title-settings"))
         {
             bool fontRead = getProperties(cur,constructor.getTitleFontDataDefault());
             if (fontRead)
@@ -2245,7 +3224,7 @@ osg::Node* ReaderWriterP3DXML::parseXmlGraph(osgDB::XmlNode* root, bool readOnly
                 OSG_INFO<<"Title font details read"<<std::endl;
             }
         }
-        else if (cur->name == "text-settings")
+        else if (match(cur->name, "text-settings"))
         {
             bool fontRead = getProperties(cur,constructor.getTextFontDataDefault());
             if (fontRead)
@@ -2253,26 +3232,26 @@ osg::Node* ReaderWriterP3DXML::parseXmlGraph(osgDB::XmlNode* root, bool readOnly
                 OSG_INFO<<"Text font details read"<<std::endl;
             }
         }
-        /*else if (cur->name == "ratio")
+        /*else if (match(cur->name, "ratio"))
         {
             key = xmlNodeListGetString(doc, cur->xmlChildrenNode, 1);
             if (key) constructor.setPresentationAspectRatio(cur->contents);
             xmlFree(key);
         }*/
-        else if (cur->name == "path")
+        else if (match(cur->name, "path"))
         {
             OSG_INFO<<"Appending search path "<<cur->contents<<std::endl;
             osgDB::getDataFilePathList().push_front(expandEnvVarsInFileName(cur->contents));
         }
-        else if (cur->name == "bgcolor")
+        else if (match(cur->name, "bgcolor"))
         {
             constructor.setBackgroundColor(mapStringToColor(cur->contents),false);
         }
-        else if (cur->name == "textcolor")
+        else if (match(cur->name, "textcolor"))
         {
             constructor.setTextColor(mapStringToColor(cur->contents));
         }
-        else if (cur->name == "duration")
+        else if (match(cur->name, "duration"))
         {
             constructor.setPresentationDuration(osg::asciiToDouble(cur->contents.c_str()));
         }
@@ -2280,12 +3259,12 @@ osg::Node* ReaderWriterP3DXML::parseXmlGraph(osgDB::XmlNode* root, bool readOnly
         {
             constructor.addPresentationKey(keyPosition);
         }
-        else if (readOnlyHoldingPage && cur->name == "holding_slide")
+        else if (readOnlyHoldingPage && match(cur->name, "holding_slide"))
         {
             constructor.addSlide();
             parseSlide (constructor, cur);
         }
-        else if (!readOnlyHoldingPage && cur->name == "slide")
+        else if (!readOnlyHoldingPage && match(cur->name, "slide"))
         {
             constructor.addSlide();
 
@@ -2302,7 +3281,7 @@ osg::Node* ReaderWriterP3DXML::parseXmlGraph(osgDB::XmlNode* root, bool readOnly
                 parseSlide (constructor, cur);
             }
         }
-        else if (!readOnlyHoldingPage && cur->name == "modify_slide")
+        else if (!readOnlyHoldingPage && match(cur->name, "modify_slide"))
         {
             int slideNum;
             if (getProperty(cur, "slide", slideNum))
@@ -2315,22 +3294,62 @@ osg::Node* ReaderWriterP3DXML::parseXmlGraph(osgDB::XmlNode* root, bool readOnly
                 constructor.addSlide();
             }
         }
-        else if (!readOnlyHoldingPage && cur->name == "page")
+        else if (!readOnlyHoldingPage && match(cur->name, "page"))
         {
             parsePage (constructor, cur);
         }
-        else if (!readOnlyHoldingPage && cur->name == "pdf_document")
+        else if (!readOnlyHoldingPage && match(cur->name, "pdf_document"))
         {
             parsePdfDocument(constructor, cur);
         }
-        else if (!readOnlyHoldingPage && cur->name == "template_slide")
+        else if (!readOnlyHoldingPage && match(cur->name, "template_slide"))
         {
             std::string name;
             if (getProperty(cur, "name", name))
             {
                 _templateMap[name] = cur;
-                std::cout<<"Defining template slide "<<name<<std::endl;
+                OSG_INFO<<"Defining template slide "<<name<<std::endl;
             }
+        }
+        else if (!readOnlyHoldingPage && match(cur->name, "template_layer"))
+        {
+            std::string name;
+            if (getProperty(cur, "name", name))
+            {
+                _templateMap[name] = cur;
+                OSG_INFO<<"Defining template layer "<<name<<std::endl;
+            }
+        }
+        else if (!readOnlyHoldingPage && match(cur->name, "property_animation"))
+        {
+            osg::ref_ptr<osgPresentation::PropertyAnimation> pa = new osgPresentation::PropertyAnimation;
+            if (parsePropertyAnimation(cur,*pa))
+            {
+                constructor.addPropertyAnimation(osgPresentation::SlideShowConstructor::CURRENT_PRESENTATION, pa.get());
+            }
+        }
+        else if (!readOnlyHoldingPage && match(cur->name, "properties"))
+        {
+                if (!constructor.getPresentationSwitch()) constructor.createPresentation();
+                if (constructor.getPresentationSwitch())
+                {
+                    osg::ref_ptr<osg::UserDataContainer> udc = constructor.getPresentationSwitch()->getOrCreateUserDataContainer();
+                    if (parseProperties(cur, *udc))
+                    {
+                        OSG_NOTICE<<"Assigned properties to Presentation"<<std::endl;
+                    }
+                }
+            }
+    }
+
+    osgPresentation::SlideShowConstructor::ScriptData scriptData;
+    if (getProperties(root, scriptData))
+    {
+        for(osgPresentation::SlideShowConstructor::ScriptData::Scripts::iterator itr = scriptData.scripts.begin();
+            itr != scriptData.scripts.end();
+            ++itr)
+        {
+            constructor.addScriptCallback(osgPresentation::SlideShowConstructor::CURRENT_PRESENTATION, itr->first, itr->second);
         }
     }
 

@@ -53,6 +53,8 @@ namespace osg
     };
 }
 
+
+
 Node::Node()
     :Object(true)
 {
@@ -93,18 +95,18 @@ Node::~Node()
     setStateSet(0);
 }
 
-void Node::addParent(osg::Group* node)
+void Node::addParent(osg::Group* parent)
 {
     OpenThreads::ScopedPointerLock<OpenThreads::Mutex> lock(getRefMutex());
 
-    _parents.push_back(node);
+    _parents.push_back(parent);
 }
 
-void Node::removeParent(osg::Group* node)
+void Node::removeParent(osg::Group* parent)
 {
     OpenThreads::ScopedPointerLock<OpenThreads::Mutex> lock(getRefMutex());
 
-    ParentList::iterator pitr = std::find(_parents.begin(),_parents.end(),node);
+    ParentList::iterator pitr = std::find(_parents.begin(), _parents.end(), parent);
     if (pitr!=_parents.end()) _parents.erase(pitr);
 }
 
@@ -201,7 +203,7 @@ MatrixList Node::getWorldMatrices(const osg::Node* haltTraversalAtNode) const
     return matrices;
 }
 
-void Node::setUpdateCallback(NodeCallback* nc)
+void Node::setUpdateCallback(Callback* nc)
 {
     // if no changes just return.
     if (_updateCallback==nc) return;
@@ -279,7 +281,7 @@ void Node::setNumChildrenRequiringUpdateTraversal(unsigned int num)
 }
 
 
-void Node::setEventCallback(NodeCallback* nc)
+void Node::setEventCallback(Callback* nc)
 {
     // if no changes just return.
     if (_eventCallback==nc) return;
@@ -475,7 +477,11 @@ bool Node::containsOccluderNodes() const
 
 void Node::setDescriptions(const DescriptionList& descriptions)
 {
-    getOrCreateUserDataContainer()->setDescriptions(descriptions);
+    // only assign a description list (and associated UseDataContainer) if we need to.
+    if (!descriptions.empty() || getUserDataContainer())
+    {
+        getOrCreateUserDataContainer()->setDescriptions(descriptions);
+    }
 }
 
 Node::DescriptionList& Node::getDescriptions()

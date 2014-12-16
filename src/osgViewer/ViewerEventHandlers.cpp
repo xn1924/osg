@@ -68,9 +68,9 @@ WindowSizeHandler::WindowSizeHandler() :
 
 void WindowSizeHandler::getUsage(osg::ApplicationUsage &usage) const
 {
-    usage.addKeyboardMouseBinding(reinterpret_cast<const char*>(&_keyEventToggleFullscreen), "Toggle full screen.");
-    usage.addKeyboardMouseBinding(reinterpret_cast<const char*>(&_keyEventWindowedResolutionUp), "Increase the screen resolution (in windowed mode).");
-    usage.addKeyboardMouseBinding(reinterpret_cast<const char*>(&_keyEventWindowedResolutionDown), "Decrease the screen resolution (in windowed mode).");
+    usage.addKeyboardMouseBinding(_keyEventToggleFullscreen, "Toggle full screen.");
+    usage.addKeyboardMouseBinding(_keyEventWindowedResolutionUp, "Increase the screen resolution (in windowed mode).");
+    usage.addKeyboardMouseBinding(_keyEventWindowedResolutionDown, "Decrease the screen resolution (in windowed mode).");
 }
 
 bool WindowSizeHandler::handle(const osgGA::GUIEventAdapter &ea, osgGA::GUIActionAdapter &aa)
@@ -308,8 +308,8 @@ ThreadingHandler::ThreadingHandler() :
 
 void ThreadingHandler::getUsage(osg::ApplicationUsage &usage) const
 {
-    usage.addKeyboardMouseBinding(reinterpret_cast<const char*>(&_keyEventChangeThreadingModel), "Toggle threading model.");
-    usage.addKeyboardMouseBinding(reinterpret_cast<const char*>(&_keyEventChangeEndBarrierPosition), "Toggle the placement of the end of frame barrier.");
+    usage.addKeyboardMouseBinding(_keyEventChangeThreadingModel, "Toggle threading model.");
+    usage.addKeyboardMouseBinding(_keyEventChangeEndBarrierPosition, "Toggle the placement of the end of frame barrier.");
 }
 
 bool ThreadingHandler::handle(const osgGA::GUIEventAdapter &ea, osgGA::GUIActionAdapter &aa)
@@ -420,8 +420,8 @@ RecordCameraPathHandler::RecordCameraPathHandler(const std::string& filename, fl
 
 void RecordCameraPathHandler::getUsage(osg::ApplicationUsage &usage) const
 {
-    usage.addKeyboardMouseBinding(reinterpret_cast<const char*>(&_keyEventToggleRecord), "Toggle camera path recording.");
-    usage.addKeyboardMouseBinding(reinterpret_cast<const char*>(&_keyEventTogglePlayback), "Toggle camera path playback.");
+    usage.addKeyboardMouseBinding(_keyEventToggleRecord, "Toggle camera path recording.");
+    usage.addKeyboardMouseBinding(_keyEventTogglePlayback, "Toggle camera path playback.");
 }
 
 bool RecordCameraPathHandler::handle(const osgGA::GUIEventAdapter &ea, osgGA::GUIActionAdapter &aa)
@@ -631,17 +631,8 @@ bool LODScaleHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::GUIActionA
 
 void LODScaleHandler::getUsage(osg::ApplicationUsage& usage) const
 {
-    {
-        std::ostringstream ostr;
-        ostr<<char(_keyEventIncreaseLODScale);
-        usage.addKeyboardMouseBinding(ostr.str(),"Increase LODScale.");
-    }
-
-    {
-        std::ostringstream ostr;
-        ostr<<char(_keyEventDecreaseLODScale);
-        usage.addKeyboardMouseBinding(ostr.str(),"Decrease LODScale.");
-    }
+    usage.addKeyboardMouseBinding(_keyEventIncreaseLODScale,"Increase LODScale.");
+    usage.addKeyboardMouseBinding(_keyEventDecreaseLODScale,"Decrease LODScale.");
 }
 
 ToggleSyncToVBlankHandler::ToggleSyncToVBlankHandler():
@@ -696,11 +687,7 @@ bool ToggleSyncToVBlankHandler::handle(const osgGA::GUIEventAdapter& ea, osgGA::
 
 void ToggleSyncToVBlankHandler::getUsage(osg::ApplicationUsage& usage) const
 {
-    {
-        std::ostringstream ostr;
-        ostr<<char(_keyEventToggleSyncToVBlank);
-        usage.addKeyboardMouseBinding(ostr.str(),"Toggle SyncToVBlank.");
-    }
+    usage.addKeyboardMouseBinding(_keyEventToggleSyncToVBlank,"Toggle SyncToVBlank.");
 }
 
 
@@ -725,94 +712,23 @@ InteractiveImageHandler::InteractiveImageHandler(osg::Image* image, osg::Texture
         double width = _camera->getViewport()->width();
         double height = _camera->getViewport()->height();
 
-        resize(width, height);
-    }
-}
-
-bool InteractiveImageHandler::computeIntersections(osgViewer::View* view, float x,float y, const osg::NodePath& nodePath, osgUtil::LineSegmentIntersector::Intersections& intersections,osg::Node::NodeMask traversalMask) const
-{
-    float local_x, local_y = 0.0;
-    const osg::Camera* camera;
-    if (_fullscreen)
-    {
-        if (!_camera) return false;
-        camera = _camera.get();
-        local_x = x;
-        local_y = y;
-    }
-    else
-    {
-        if (!view->getCamera() || nodePath.empty()) return false;
-        camera = view->getCameraContainingPosition(x, y, local_x, local_y);
-        if (!camera) camera = view->getCamera();
-    }
-
-    osg::ref_ptr< osgUtil::LineSegmentIntersector > picker;
-    if (_fullscreen)
-    {
-        picker = new osgUtil::LineSegmentIntersector(osgUtil::Intersector::WINDOW, local_x, local_y);
-    }
-    else
-    {
-        osg::Matrixd matrix;
-        if (nodePath.size()>1)
-        {
-            osg::NodePath prunedNodePath(nodePath.begin(),nodePath.end()-1);
-            matrix = osg::computeLocalToWorld(prunedNodePath);
-        }
-
-        matrix.postMult(camera->getViewMatrix());
-        matrix.postMult(camera->getProjectionMatrix());
-
-        double zNear = -1.0;
-        double zFar = 1.0;
-        if (camera->getViewport())
-        {
-            matrix.postMult(camera->getViewport()->computeWindowMatrix());
-            zNear = 0.0;
-            zFar = 1.0;
-        }
-
-        osg::Matrixd inverse;
-        inverse.invert(matrix);
-
-        osg::Vec3d startVertex = osg::Vec3d(local_x,local_y,zNear) * inverse;
-        osg::Vec3d endVertex = osg::Vec3d(local_x,local_y,zFar) * inverse;
-
-        picker = new osgUtil::LineSegmentIntersector(osgUtil::Intersector::MODEL, startVertex, endVertex);
-    }
-
-    osgUtil::IntersectionVisitor iv(picker.get());
-    iv.setTraversalMask(traversalMask);
-
-    if (_fullscreen)
-    {
-        const_cast<osg::Camera*>(camera)->accept(iv);
-    }
-    else
-    {
-        nodePath.back()->accept(iv);
-    }
-
-    if (picker->containsIntersections())
-    {
-        intersections = picker->getIntersections();
-        return true;
-    }
-    else
-    {
-        intersections.clear();
-        return false;
+        resize(static_cast<int>(width), static_cast<int>(height));
     }
 }
 
 bool InteractiveImageHandler::mousePosition(osgViewer::View* view, osg::NodeVisitor* nv, const osgGA::GUIEventAdapter& ea, int& x, int &y) const
 {
+    if (!view) return false;
+    if (_fullscreen)
+    {
+        x = ea.getX();
+        y = ea.getY();
+        return true;
+    }
+
     osgUtil::LineSegmentIntersector::Intersections intersections;
-    bool foundIntersection = view==0 ? false :
-        (nv==0 ? view->computeIntersections(ea.getX(), ea.getY(), intersections) :
-                 //view->computeIntersections(ea.getX(), ea.getY(), nv->getNodePath(), intersections));
-                 computeIntersections(view, ea.getX(), ea.getY(), nv->getNodePath(), intersections));
+    bool foundIntersection = (nv==0) ? view->computeIntersections(ea, intersections) :
+                                       view->computeIntersections(ea, nv->getNodePath(), intersections);
 
     if (foundIntersection)
     {

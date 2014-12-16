@@ -495,8 +495,7 @@ osg::Geometry* ReaderWriterOBJ::convertElementListToGeometry(obj::Model& model, 
     if (vertices) geometry->setVertexArray(vertices);
     if (normals)
     {
-        geometry->setNormalArray(normals);
-        geometry->setNormalBinding(osg::Geometry::BIND_PER_VERTEX);
+        geometry->setNormalArray(normals, osg::Array::BIND_PER_VERTEX);
     }
     if (texcoords)
     {
@@ -868,7 +867,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterOBJ::readNode(const std::string& fil
 
         // code for setting up the database path so that internally referenced file are searched for on relative paths.
         osg::ref_ptr<Options> local_opt = options ? static_cast<Options*>(options->clone(osg::CopyOp::SHALLOW_COPY)) : new Options;
-        local_opt->setDatabasePath(osgDB::getFilePath(fileName));
+        local_opt->getDatabasePathList().push_front(osgDB::getFilePath(fileName));
 
         obj::Model model;
         model.setDatabasePath(osgDB::getFilePath(fileName.c_str()));
@@ -876,7 +875,7 @@ osgDB::ReaderWriter::ReadResult ReaderWriterOBJ::readNode(const std::string& fil
 
         ObjOptionsStruct localOptions = parseOptions(options);
 
-        osg::Node* node = convertModelToSceneGraph(model, localOptions, options);
+        osg::Node* node = convertModelToSceneGraph(model, localOptions, local_opt.get());
         return node;
     }
 

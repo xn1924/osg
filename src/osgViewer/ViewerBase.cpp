@@ -25,6 +25,8 @@
 #include <osg/TexMat>
 #include <osg/DeleteHandler>
 
+#include <osgDB/Registry>
+
 #include <osgUtil/Optimizer>
 #include <osgUtil/IntersectionVisitor>
 #include <osgUtil/Statistics>
@@ -37,6 +39,23 @@ static osg::ApplicationUsageProxy ViewerBase_e4(osg::ApplicationUsage::ENVIRONME
 static osg::ApplicationUsageProxy ViewerBase_e5(osg::ApplicationUsage::ENVIRONMENTAL_VARIABLE,"OSG_RUN_MAX_FRAME_RATE","Set the maximum number of frame as second that viewer run. 0.0 is default and disables an frame rate capping.");
 
 using namespace osgViewer;
+
+
+struct InitRegistry
+{
+    InitRegistry()
+    {
+        osgDB::Registry::instance();
+    }
+
+    ~InitRegistry()
+    {
+        osgDB::DatabasePager::prototype() = 0;
+        osgDB::Registry::instance(true);
+    }
+};
+
+static InitRegistry s_InitRegistry;
 
 ViewerBase::ViewerBase():
     osg::Object(true)
@@ -336,6 +355,7 @@ void ViewerBase::startThreading()
         {
             renderer->setGraphicsThreadDoesCull(graphicsThreadsDoesCull);
             renderer->setDone(false);
+            renderer->reset();
             ++numViewerDoubleBufferedRenderingOperation;
         }
     }
@@ -759,10 +779,10 @@ void ViewerBase::renderingTraversals()
     {
         Scene* scene = *sitr;
         osgDB::DatabasePager* dp = scene ? scene->getDatabasePager() : 0;
-        if (dp)
-        {
-            dp->signalBeginFrame(frameStamp);
-        }
+        if (dp) dp->signalBeginFrame(frameStamp);
+
+        osgDB::ImagePager* ip = scene ? scene->getImagePager() : 0;
+        if (ip) ip->signalBeginFrame(frameStamp);
 
         if (scene->getSceneData())
         {
@@ -841,10 +861,10 @@ void ViewerBase::renderingTraversals()
     {
         Scene* scene = *sitr;
         osgDB::DatabasePager* dp = scene ? scene->getDatabasePager() : 0;
-        if (dp)
-        {
-            dp->signalEndFrame();
-        }
+        if (dp) dp->signalEndFrame();
+
+        osgDB::ImagePager* ip = scene ? scene->getImagePager() : 0;
+        if (ip) ip->signalEndFrame();
     }
 
     // wait till the dynamic draw is complete.

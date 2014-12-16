@@ -28,7 +28,12 @@
 
 namespace osgFFmpeg {
 
-
+static std::string AvStrError(int errnum)
+{
+    char buf[128];
+    av_strerror(errnum, buf, sizeof(buf));
+    return std::string(buf);
+}
 
 FFmpegDecoder::FFmpegDecoder() :
     m_audio_stream(0),
@@ -57,89 +62,99 @@ bool FFmpegDecoder::open(const std::string & filename, FFmpegParameters* paramet
     {
         // Open video file
         AVFormatContext * p_format_context = 0;
+        AVInputFormat *iformat = 0;
 
         if (filename.compare(0, 5, "/dev/")==0)
         {
+#ifdef ANDROID
+            throw std::runtime_error("Device not supported on Android");
+#else
             avdevice_register_all();
 
-            OSG_NOTICE<<"Attempting to stream "<<filename<<std::endl;
-
-            AVFormatParameters formatParams;
-            memset(&formatParams, 0, sizeof(AVFormatParameters));
-            AVInputFormat *iformat;
-
-            formatParams.channel = 0;
-            formatParams.standard = 0;
-#if 1
-            formatParams.width = 320;
-            formatParams.height = 240;
-#else
-            formatParams.width = 640;
-            formatParams.height = 480;
-#endif
-            formatParams.time_base.num = 1;
-            formatParams.time_base.den = 30;
+            if (parameters)
+            {
+                av_dict_set(parameters->getOptions(), "video_size", "640x480", 0);
+                av_dict_set(parameters->getOptions(), "framerate", "1:30", 0);
+            }
 
             std::string format = "video4linux2";
             iformat = av_find_input_format(format.c_str());
 
             if (iformat)
             {
-                OSG_NOTICE<<"Found input format: "<<format<<std::endl;
+                OSG_INFO<<"Found input format: "<<format<<std::endl;
             }
             else
             {
-                OSG_NOTICE<<"Failed to find input format: "<<format<<std::endl;
+                OSG_INFO<<"Failed to find input format: "<<format<<std::endl;
             }
 
-            int error = av_open_input_file(&p_format_context, filename.c_str(), iformat, 0, &formatParams);
-            if (error != 0)
-            {
-                std::string error_str;
-                switch (error)
-                {
-                    //case AVERROR_UNKNOWN: error_str = "AVERROR_UNKNOWN"; break;   // same value as AVERROR_INVALIDDATA
-                    case AVERROR_IO: error_str = "AVERROR_IO"; break;
-                    case AVERROR_NUMEXPECTED: error_str = "AVERROR_NUMEXPECTED"; break;
-                    case AVERROR_INVALIDDATA: error_str = "AVERROR_INVALIDDATA"; break;
-                    case AVERROR_NOMEM: error_str = "AVERROR_NOMEM"; break;
-                    case AVERROR_NOFMT: error_str = "AVERROR_NOFMT"; break;
-                    case AVERROR_NOTSUPP: error_str = "AVERROR_NOTSUPP"; break;
-                    case AVERROR_NOENT: error_str = "AVERROR_NOENT"; break;
-                    case AVERROR_PATCHWELCOME: error_str = "AVERROR_PATCHWELCOME"; break;
-                    default: error_str = "Unknown error"; break;
-                }
-
-                throw std::runtime_error("av_open_input_file() failed : " + error_str);
-            }
+#endif
         }
         else
         {
-            AVInputFormat* av_format = (parameters ? parameters->getFormat() : 0);
-            AVFormatParameters* av_params = (parameters ? parameters->getFormatParameter() : 0);
-            if (av_open_input_file(&p_format_context, filename.c_str(), av_format, 0, av_params) !=0 )
-                throw std::runtime_error("av_open_input_file() failed");
+            iformat = parameters ? parameters->getFormat() : 0;
+            AVIOContext* context = parameters ? parameters->getContext() : 0;
+            if (context != NULL)
+            {
+                p_format_context = avformat_alloc_context();
+                p_format_context->pb = context;
+            }
+        }
+
+        int error = avformat_open_input(&p_format_context, filename.c_str(), iformat, parameters->getOptions());
+        if (error != 0)
+        {
+            std::string error_str;
+            switch (error)
+            {
+                //case AVERROR_UNKNOWN: error_str = "AVERROR_UNKNOWN"; break;   // same value as AVERROR_INVALIDDATA
+                case AVERROR_IO: error_str = "AVERROR_IO"; break;
+                case AVERROR_NUMEXPECTED: error_str = "AVERROR_NUMEXPECTED"; break;
+                case AVERROR_INVALIDDATA: error_str = "AVERROR_INVALIDDATA"; break;
+                case AVERROR_NOMEM: error_str = "AVERROR_NOMEM"; break;
+                case AVERROR_NOFMT: error_str = "AVERROR_NOFMT"; break;
+                case AVERROR_NOTSUPP: error_str = "AVERROR_NOTSUPP"; break;
+                case AVERROR_NOENT: error_str = "AVERROR_NOENT"; break;
+                case AVERROR_PATCHWELCOME: error_str = "AVERROR_PATCHWELCOME"; break;
+                default: error_str = "Unknown error"; break;
+            }
+
+            throw std::runtime_error("av_open_input_file() failed : " + error_str);
         }
 
         m_format_context.reset(p_format_context);
 
         // Retrieve stream info
-        if (av_find_stream_info(p_format_context) < 0)
+        // Only buffer up to one and a half seconds
+        p_format_context->max_analyze_duration = AV_TIME_BASE * 1.5f;
+        if (avformat_find_stream_info(p_format_context, NULL) < 0)
             throw std::runtime_error("av_find_stream_info() failed");
 
         m_duration = double(m_format_context->duration) / AV_TIME_BASE;
-        m_start = double(m_format_context->start_time) / AV_TIME_BASE;
+        if (m_format_context->start_time != static_cast<int64_t>(AV_NOPTS_VALUE))
+            m_start = double(m_format_context->start_time) / AV_TIME_BASE;
+        else
+            m_start = 0;
 
         // TODO move this elsewhere
         m_clocks.reset(m_start);
 
         // Dump info to stderr
-        dump_format(p_format_context, 0, filename.c_str(), false);
+        av_dump_format(p_format_context, 0, filename.c_str(), false);
 
         // Find and open the first video and audio streams (note that audio stream is optional and only opened if possible)
+        if ((m_video_index = av_find_best_stream(m_format_context.get(), AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0)) < 0)
+            throw std::runtime_error("Could not open video stream");
+        m_video_stream = m_format_context->streams[m_video_index];
 
-        findVideoStream();
-        findAudioStream();
+        if ((m_audio_index = av_find_best_stream(m_format_context.get(), AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0)) >= 0)
+            m_audio_stream = m_format_context->streams[m_audio_index];
+        else
+        {
+            m_audio_stream = 0;
+            m_audio_index = std::numeric_limits<unsigned int>::max();
+        }
 
         m_video_decoder.open(m_video_stream);
 
@@ -196,6 +211,7 @@ bool FFmpegDecoder::readNextPacket()
         return readNextPacketSeeking();
 
     default:
+        OSG_FATAL << "unknown decoder state " << m_state << std::endl;
         assert(false);
         return false;
     }
@@ -230,40 +246,6 @@ void FFmpegDecoder::pause()
     m_state = PAUSE;
 }
 
-void FFmpegDecoder::findAudioStream()
-{
-    for (unsigned int i = 0; i < m_format_context->nb_streams; ++i)
-    {
-        if (m_format_context->streams[i]->codec->codec_type == CODEC_TYPE_AUDIO)
-        {
-            m_audio_stream = m_format_context->streams[i];
-            m_audio_index = i;
-            return;
-        }
-    }
-
-    m_audio_stream = 0;
-    m_audio_index = std::numeric_limits<unsigned int>::max();
-}
-
-
-
-void FFmpegDecoder::findVideoStream()
-{
-    for (unsigned int i = 0; i < m_format_context->nb_streams; ++i)
-    {
-        if (m_format_context->streams[i]->codec->codec_type == CODEC_TYPE_VIDEO)
-        {
-            m_video_stream = m_format_context->streams[i];
-            m_video_index = i;
-            return;
-        }
-    }
-
-    throw std::runtime_error("could not find a video stream");
-}
-
-
 
 inline void FFmpegDecoder::flushAudioQueue()
 {
@@ -279,8 +261,6 @@ inline void FFmpegDecoder::flushVideoQueue()
     m_video_queue.flush(pc);
 }
 
-
-
 bool FFmpegDecoder::readNextPacketNormal()
 {
     AVPacket packet;
@@ -290,12 +270,16 @@ bool FFmpegDecoder::readNextPacketNormal()
         bool end_of_stream = false;
 
         // Read the next frame packet
-        if (av_read_frame(m_format_context.get(), &packet) < 0)
+        int error = av_read_frame(m_format_context.get(), &packet);
+        if (error < 0)
         {
-            if (url_ferror(m_format_context->pb) == 0)
+            if (error == static_cast<int>(AVERROR_EOF) ||
+                m_format_context.get()->pb->eof_reached)
                 end_of_stream = true;
-            else
+            else {
+                OSG_FATAL << "av_read_frame() returned " << AvStrError(error) << std::endl;
                 throw std::runtime_error("av_read_frame() failed");
+            }
         }
 
         if (end_of_stream)
@@ -314,8 +298,10 @@ bool FFmpegDecoder::readNextPacketNormal()
         else
         {
             // Make the packet data available beyond av_read_frame() logical scope.
-            if (av_dup_packet(&packet) < 0)
+            if ((error = av_dup_packet(&packet)) < 0) {
+                OSG_FATAL << "av_dup_packet() returned " << AvStrError(error) << std::endl;
                 throw std::runtime_error("av_dup_packet() failed");
+            }
 
             m_pending_packet = FFmpegPacket(packet);
         }
@@ -381,8 +367,11 @@ void FFmpegDecoder::rewindButDontFlushQueues()
     const int64_t pos = int64_t(m_clocks.getStartTime() * double(AV_TIME_BASE));
     const int64_t seek_target = av_rescale_q(pos, AvTimeBaseQ, m_video_stream->time_base);
 
-    if (av_seek_frame(m_format_context.get(), m_video_index, seek_target, 0/*AVSEEK_FLAG_BYTE |*/ /*AVSEEK_FLAG_BACKWARD*/) < 0)
+    int error = 0;
+    if ((error = av_seek_frame(m_format_context.get(), m_video_index, seek_target, 0/*AVSEEK_FLAG_BYTE |*/ /*AVSEEK_FLAG_BACKWARD*/)) < 0) {
+        OSG_FATAL << "av_seek_frame returned " << AvStrError(error) << std::endl;
         throw std::runtime_error("av_seek_frame failed()");
+    }
 
     m_clocks.rewind();
     m_state = REWINDING;
@@ -407,8 +396,11 @@ void FFmpegDecoder::seekButDontFlushQueues(double time)
 
     m_clocks.setSeekTime(time);
 
-    if (av_seek_frame(m_format_context.get(), m_video_index, seek_target, 0/*AVSEEK_FLAG_BYTE |*/ /*AVSEEK_FLAG_BACKWARD*/) < 0)
+    int error = 0;
+    if ((error = av_seek_frame(m_format_context.get(), m_video_index, seek_target, 0/*AVSEEK_FLAG_BYTE |*/ /*AVSEEK_FLAG_BACKWARD*/)) < 0) {
+        OSG_FATAL << "av_seek_frame() returned " << AvStrError(error) << std::endl;
         throw std::runtime_error("av_seek_frame failed()");
+    }
 
     m_clocks.seek(time);
     m_state = SEEKING;

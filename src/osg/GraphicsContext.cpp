@@ -23,6 +23,7 @@
 #include <osg/Drawable>
 #include <osg/FragmentProgram>
 #include <osg/VertexProgram>
+#include <osg/GLExtensions>
 
 #include <OpenThreads/ReentrantMutex>
 
@@ -113,8 +114,11 @@ void GraphicsContext::ScreenIdentifier::setScreenIdentifier(const std::string& d
     std::string::size_type colon = displayName.find_last_of(':');
     std::string::size_type point = displayName.find_last_of('.');
 
+    // handle the case where the host name is supplied with '.' such as 127.0.0.1:0  with only DisplayNum provided
+    // here the point to picks up on the .1 from the host name, rather then demarking the DisplayNum/ScreenNum as
+    // no ScreenNum is provided, hence no . in the rhs of the :
     if (point!=std::string::npos &&
-        colon==std::string::npos &&
+        colon!=std::string::npos &&
         point < colon) point = std::string::npos;
 
     if (colon==std::string::npos)
@@ -543,6 +547,10 @@ void GraphicsContext::close(bool callCloseImplementation)
         }
     }
 
+    if (_state.valid())
+    {
+        _state->releaseGLObjects();
+    }
 
     if (callCloseImplementation && _state.valid() && isRealized())
     {
@@ -565,8 +573,6 @@ void GraphicsContext::close(bool callCloseImplementation)
 
                 osg::flushAllDeletedGLObjects(_state->getContextID());
             }
-
-            _state->reset();
 
             releaseContext();
         }
@@ -748,18 +754,6 @@ void GraphicsContext::removeAllOperations()
     _operations.clear();
     _operationsBlock->set(false);
 }
-
-
-struct CameraRenderOrderSortOp
-{
-    inline bool operator() (const Camera* lhs,const Camera* rhs) const
-    {
-        if (lhs->getRenderOrder()<rhs->getRenderOrder()) return true;
-        if (rhs->getRenderOrder()<lhs->getRenderOrder()) return false;
-        return lhs->getRenderOrderNum()<rhs->getRenderOrderNum();
-    }
-};
-
 
 void GraphicsContext::runOperations()
 {
@@ -981,4 +975,39 @@ void GraphicsContext::resizedImplementation(int x, int y, int width, int height)
     _traits->y = y;
     _traits->width = width;
     _traits->height = height;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//
+// SyncSwapBuffersCallback
+//
+SyncSwapBuffersCallback::SyncSwapBuffersCallback()
+{
+    OSG_INFO<<"Created SyncSwapBuffersCallback."<<std::endl;
+}
+
+void SyncSwapBuffersCallback::swapBuffersImplementation(osg::GraphicsContext* gc)
+{
+    // OSG_NOTICE<<"Before swap - place to do swap ready sync"<<std::endl;
+    gc->swapBuffersImplementation();
+    //glFinish();
+
+    GLExtensions* ext = gc->getState()->get<GLExtensions>();
+
+    if (ext->glClientWaitSync)
+    {
+        if (_previousSync)
+        {
+            unsigned int num_seconds = 1;
+            GLuint64 timeout = num_seconds * ((GLuint64)1000 * 1000 * 1000);
+            ext->glClientWaitSync(_previousSync, 0, timeout);
+            ext->glDeleteSync(_previousSync);
+        }
+
+        _previousSync = ext->glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    }
+    //gc->getState()->checkGLErrors("after glWaitSync");
+
+    //OSG_NOTICE<<"After swap"<<std::endl;
 }

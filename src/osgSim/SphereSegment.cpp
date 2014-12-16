@@ -55,7 +55,7 @@ public:
 
     void drawImplementation(osg::RenderInfo& renderInfo) const;
 
-    virtual osg::BoundingBox computeBound() const;
+    virtual osg::BoundingBox computeBoundingBox() const;
 
 protected:
 
@@ -69,7 +69,7 @@ void SphereSegment::Surface::drawImplementation(osg::RenderInfo& renderInfo) con
     _ss->Surface_drawImplementation(*renderInfo.getState());
 }
 
-osg:: BoundingBox SphereSegment::Surface::computeBound() const
+osg:: BoundingBox SphereSegment::Surface::computeBoundingBox() const
 {
     osg:: BoundingBox bbox;
     _ss->Surface_computeBound(bbox);
@@ -114,7 +114,7 @@ protected:
     }
 
 
-    virtual osg::BoundingBox computeBound() const;
+    virtual osg::BoundingBox computeBoundingBox() const;
 
 private:
 
@@ -126,7 +126,7 @@ void SphereSegment::EdgeLine::drawImplementation(osg::RenderInfo& renderInfo) co
     _ss->EdgeLine_drawImplementation(*renderInfo.getState());
 }
 
-osg::BoundingBox SphereSegment::EdgeLine::computeBound() const
+osg::BoundingBox SphereSegment::EdgeLine::computeBoundingBox() const
 {
     osg::BoundingBox bbox;
     _ss->EdgeLine_computeBound(bbox);
@@ -167,7 +167,7 @@ protected:
             "Warning: unexpected call to osgSim::SphereSegment::Side() copy constructor"<<std::endl;
     }
 
-    virtual osg::BoundingBox computeBound() const;
+    virtual osg::BoundingBox computeBoundingBox() const;
 
 private:
     SphereSegment* _ss;
@@ -181,7 +181,7 @@ void SphereSegment::Side::drawImplementation(osg::RenderInfo& renderInfo) const
     _ss->Side_drawImplementation(*renderInfo.getState(), _planeOrientation, _BoundaryAngle);
 }
 
-osg::BoundingBox SphereSegment::Side::computeBound() const
+osg::BoundingBox SphereSegment::Side::computeBoundingBox() const
 {
     osg::BoundingBox bbox;
     _ss->Side_computeBound(bbox, _planeOrientation, _BoundaryAngle);
@@ -230,7 +230,7 @@ protected:
         //getOrCreateStateSet()->setAttributeAndModes(new osg::LineWidth(2.0),osg::StateAttribute::OFF);
     }
 
-    virtual osg::BoundingBox computeBound() const;
+    virtual osg::BoundingBox computeBoundingBox() const;
 
 private:
     SphereSegment* _ss;
@@ -242,7 +242,7 @@ void SphereSegment::Spoke::drawImplementation(osg::RenderInfo& renderInfo) const
     _ss->Spoke_drawImplementation(*renderInfo.getState(), _azAngle, _elevAngle);
 }
 
-osg::BoundingBox SphereSegment::Spoke::computeBound() const
+osg::BoundingBox SphereSegment::Spoke::computeBoundingBox() const
 {
     osg::BoundingBox bbox;
     _ss->Spoke_computeBound(bbox, _azAngle, _elevAngle);
@@ -378,21 +378,19 @@ void SphereSegment::init()
 
 void SphereSegment::dirtyAllDrawableDisplayLists()
 {
-    for(DrawableList::iterator itr = _drawables.begin();
-        itr != _drawables.end();
-        ++itr)
+    for(unsigned int i=0; i<getNumDrawables(); ++i)
     {
-        (*itr)->dirtyDisplayList();
+        osg::Drawable* drawable = getDrawable(i);
+        if (drawable) drawable->dirtyDisplayList();
     }
 }
 
 void SphereSegment::dirtyAllDrawableBounds()
 {
-    for(DrawableList::iterator itr = _drawables.begin();
-        itr != _drawables.end();
-        ++itr)
+    for(unsigned int i=0; i<getNumDrawables(); ++i)
     {
-        (*itr)->dirtyBound();
+        osg::Drawable* drawable = getDrawable(i);
+        if (drawable) drawable->dirtyBound();
     }
 }
 
@@ -893,17 +891,18 @@ struct ActivateTransparencyOnType
 {
     ActivateTransparencyOnType(const std::type_info& t): _t(t) {}
 
-    void operator()(osg::ref_ptr<osg::Drawable>& dptr) const
+    void operator()(osg::ref_ptr<osg::Node>& nptr) const
     {
-        if(typeid(*dptr)==_t)
+        if(typeid(*nptr)==_t)
         {
-            osg::StateSet* ss = dptr->getOrCreateStateSet();
+            osg::Drawable* drawable = nptr->asDrawable();
+            osg::StateSet* ss = drawable->getOrCreateStateSet();
             ss->setRenderingHint(osg::StateSet::TRANSPARENT_BIN);
 
             ss->setAttributeAndModes(new osg::CullFace(osg::CullFace::BACK),osg::StateAttribute::ON);
             ss->setMode(GL_BLEND,osg::StateAttribute::ON);
 
-            dptr->dirtyDisplayList();
+            drawable->dirtyDisplayList();
         }
     }
 
@@ -918,14 +917,15 @@ struct DeactivateTransparencyOnType
 {
     DeactivateTransparencyOnType(const std::type_info& t): _t(t) {}
 
-    void operator()(osg::ref_ptr<osg::Drawable>& dptr) const
+    void operator()(osg::ref_ptr<osg::Node>& nptr) const
     {
-        if(typeid(*dptr)==_t)
+        if(typeid(*nptr)==_t)
         {
-            osg::StateSet* ss = dptr->getStateSet();
+            osg::Drawable* drawable = nptr->asDrawable();
+            osg::StateSet* ss = drawable->getOrCreateStateSet();
             if(ss) ss->setRenderingHint(osg::StateSet::OPAQUE_BIN);
 
-            dptr->dirtyDisplayList();
+            drawable->dirtyDisplayList();
         }
     }
 
@@ -940,32 +940,32 @@ void SphereSegment::setSurfaceColor(const osg::Vec4& c)
 {
     _surfaceColor=c;
 
-    if(c.w() != 1.0) std::for_each(_drawables.begin(), _drawables.end(), ActivateTransparencyOnType(typeid(Surface)));
-    else std::for_each(_drawables.begin(), _drawables.end(), DeactivateTransparencyOnType(typeid(Surface)));
+    if(c.w() != 1.0) std::for_each(_children.begin(), _children.end(), ActivateTransparencyOnType(typeid(Surface)));
+    else std::for_each(_children.begin(), _children.end(), DeactivateTransparencyOnType(typeid(Surface)));
 }
 
 void SphereSegment::setSpokeColor(const osg::Vec4& c)
 {
     _spokeColor=c;
 
-    if(c.w() != 1.0) std::for_each(_drawables.begin(), _drawables.end(), ActivateTransparencyOnType(typeid(Spoke)));
-    else std::for_each(_drawables.begin(), _drawables.end(), DeactivateTransparencyOnType(typeid(Spoke)));
+    if(c.w() != 1.0) std::for_each(_children.begin(), _children.end(), ActivateTransparencyOnType(typeid(Spoke)));
+    else std::for_each(_children.begin(), _children.end(), DeactivateTransparencyOnType(typeid(Spoke)));
 }
 
 void SphereSegment::setEdgeLineColor(const osg::Vec4& c)
 {
     _edgeLineColor=c;
 
-    if(c.w() != 1.0) std::for_each(_drawables.begin(), _drawables.end(), ActivateTransparencyOnType(typeid(EdgeLine)));
-    else std::for_each(_drawables.begin(), _drawables.end(), DeactivateTransparencyOnType(typeid(EdgeLine)));
+    if(c.w() != 1.0) std::for_each(_children.begin(), _children.end(), ActivateTransparencyOnType(typeid(EdgeLine)));
+    else std::for_each(_children.begin(), _children.end(), DeactivateTransparencyOnType(typeid(EdgeLine)));
 }
 
 void SphereSegment::setSideColor(const osg::Vec4& c)
 {
     _planeColor=c;
 
-    if(c.w() != 1.0) std::for_each(_drawables.begin(), _drawables.end(), ActivateTransparencyOnType(typeid(Side)));
-    else std::for_each(_drawables.begin(), _drawables.end(), DeactivateTransparencyOnType(typeid(Side)));
+    if(c.w() != 1.0) std::for_each(_children.begin(), _children.end(), ActivateTransparencyOnType(typeid(Side)));
+    else std::for_each(_children.begin(), _children.end(), DeactivateTransparencyOnType(typeid(Side)));
 }
 
 void SphereSegment::setAllColors(const osg::Vec4& c)
@@ -1030,18 +1030,16 @@ class PolytopeVisitor : public osg::NodeVisitor
         {
             if (_polytopeStack.back().second.contains(transform.getBound()))
             {
-                const osg::Polytope& polytope = _polytopeStack.front().second;
-
                 osg::Matrix matrix = _polytopeStack.back().first;
                 transform.computeLocalToWorldMatrix(matrix, this);
 
                 _polytopeStack.push_back(MatrixPolytopePair());
                 _polytopeStack.back().first = matrix;
-                _polytopeStack.back().second.setAndTransformProvidingInverse(polytope, matrix);
+                _polytopeStack.back().second.setAndTransformProvidingInverse(_polytopeStack.front().second, matrix);
 
                 traverse(transform);
 
-                _polytopeStack.back();
+                _polytopeStack.pop_back();
             }
         }
 
@@ -1051,7 +1049,7 @@ class PolytopeVisitor : public osg::NodeVisitor
             {
                 for(unsigned int i=0; i<node.getNumDrawables(); ++i)
                 {
-                    if (_polytopeStack.back().second.contains(node.getDrawable(i)->getBound()))
+                    if (_polytopeStack.back().second.contains(node.getDrawable(i)->getBoundingBox()))
                     {
                         _hits.push_back(Hit(_polytopeStack.back().first,getNodePath(),node.getDrawable(i)));
                     }

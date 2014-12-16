@@ -29,6 +29,8 @@
 #include <sstream>
 #include <windowsx.h>
 
+#define MOUSEEVENTF_FROMTOUCH           0xFF515700
+
 #if(WINVER < 0x0601)
 // Provide Declarations for Multitouch
 
@@ -1184,6 +1186,9 @@ void GraphicsWindowWin32::init()
 
     _initialized = _ownsWindow ? createWindow() : setWindow(windowHandle);
     _valid       = _initialized;
+    
+    // make sure the event queue has the correct window rectangle size and input range
+    getEventQueue()->syncWindowRectangleWithGraphcisContext();
 
     // 2008/10/03
     // Few days ago NVidia released WHQL certified drivers ver 178.13.
@@ -1986,6 +1991,9 @@ bool GraphicsWindowWin32::realizeImplementation()
 
     _realized = true;
 
+    // make sure the event queue has the correct window rectangle size and input range
+    getEventQueue()->syncWindowRectangleWithGraphcisContext();
+
     return true;
 }
 
@@ -2048,9 +2056,9 @@ void GraphicsWindowWin32::swapBuffersImplementation()
     }
 }
 
-void GraphicsWindowWin32::checkEvents()
+bool GraphicsWindowWin32::checkEvents()
 {
-    if (!_realized) return;
+    if (!_realized) return false;
 
     MSG msg;
     while (::PeekMessage(&msg, _hwnd, 0, 0, PM_REMOVE))
@@ -2070,6 +2078,8 @@ void GraphicsWindowWin32::checkEvents()
         _destroyWindow = false;
         destroyWindow(false);
     }
+           
+    return !(getEventQueue()->empty());
 }
 
 void GraphicsWindowWin32::grabFocus()
@@ -2449,6 +2459,8 @@ void GraphicsWindowWin32::transformMouseXY( float& x, float& y )
 
 LRESULT GraphicsWindowWin32::handleNativeWindowingEvent( HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam )
 {
+    if ((GetMessageExtraInfo() & MOUSEEVENTF_FROMTOUCH) == MOUSEEVENTF_FROMTOUCH) return TRUE;
+
     //!@todo adapt windows event time to osgGA event queue time for better resolution
     double eventTime  = getEventQueue()->getTime();
     double resizeTime = eventTime;
@@ -2508,6 +2520,8 @@ LRESULT GraphicsWindowWin32::handleNativeWindowingEvent( HWND hwnd, UINT uMsg, W
                 else if (uMsg==WM_MBUTTONDOWN) button = 2;
                 else button = 3;
 
+                _capturedMouseButtons.insert(button);
+
                 float mx = GET_X_LPARAM(lParam);
                 float my = GET_Y_LPARAM(lParam);
                 transformMouseXY(mx, my);
@@ -2522,13 +2536,16 @@ LRESULT GraphicsWindowWin32::handleNativeWindowingEvent( HWND hwnd, UINT uMsg, W
         /////////////////////
 
             {
-                ::ReleaseCapture();
-
                 int button;
 
                 if (uMsg==WM_LBUTTONUP)      button = 1;
                 else if (uMsg==WM_MBUTTONUP) button = 2;
                 else button = 3;
+
+                _capturedMouseButtons.erase(button);
+
+                if(_capturedMouseButtons.empty())
+                  ::ReleaseCapture();
 
                 float mx = GET_X_LPARAM(lParam);
                 float my = GET_Y_LPARAM(lParam);
@@ -2551,6 +2568,8 @@ LRESULT GraphicsWindowWin32::handleNativeWindowingEvent( HWND hwnd, UINT uMsg, W
                 if (uMsg==WM_LBUTTONDBLCLK)            button = 1;
                 else if (uMsg==WM_MBUTTONDBLCLK)    button = 2;
                 else button = 3;
+
+                _capturedMouseButtons.insert(button);
 
                 float mx = GET_X_LPARAM(lParam);
                 float my = GET_Y_LPARAM(lParam);
@@ -2703,6 +2722,9 @@ LRESULT GraphicsWindowWin32::handleNativeWindowingEvent( HWND hwnd, UINT uMsg, W
                     key->second = false;
                 }
             }
+
+            _capturedMouseButtons.clear();
+
             break;
 
         ///////////////////

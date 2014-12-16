@@ -95,11 +95,10 @@ public:
     virtual void quit( bool waitForThreadToExit=true )
     {
         _done = true;
-        if ( waitForThreadToExit )
+        if (isRunning() && waitForThreadToExit)
         {
-            while( isRunning() )
-                OpenThreads::Thread::YieldCurrentThread();
-            OSG_DEBUG<<"GifImageStream thread quitted"<<std::endl;
+            cancel();
+            join();
         }
     }
 
@@ -369,8 +368,12 @@ GifImageStream** obj)
     /* The way an interlaced image should be read - offsets and jumps */
     int interlacedoffset[] = { 0, 4, 2, 1 };
     int interlacedjumps[] = { 8, 8, 4, 2 };
-
+#if (GIFLIB_MAJOR >= 5)
+    int Error;
+    giffile = DGifOpen(&fin,gif_read_stream, &Error);
+#else
     giffile = DGifOpen(&fin,gif_read_stream);
+#endif
     if (!giffile)
     {
         giferror = ERR_OPEN;
@@ -557,7 +560,11 @@ GifImageStream** obj)
     *width_ret = giffile->SWidth;
     *height_ret = giffile->SHeight;
     *numComponents_ret = 4;
+#if (GIFLIB_MAJOR >= 5&& !(GIFLIB_MAJOR == 5 && GIFLIB_MINOR == 0))
+    DGifCloseFile(giffile, &Error);
+#else
     DGifCloseFile(giffile);
+#endif
     return buffer;
 }
 

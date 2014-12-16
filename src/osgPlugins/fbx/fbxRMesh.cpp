@@ -33,7 +33,7 @@ enum GeometryType
     GEOMETRY_MORPH
 };
 
-osg::Vec3d convertVec3(const KFbxVector4& v)
+osg::Vec3d convertVec3(const FbxVector4& v)
 {
     return osg::Vec3d(
         v[0],
@@ -42,16 +42,16 @@ osg::Vec3d convertVec3(const KFbxVector4& v)
 }
 
 template <typename T>
-bool layerElementValid(const KFbxLayerElementTemplate<T>* pLayerElement)
+bool layerElementValid(const FbxLayerElementTemplate<T>* pLayerElement)
 {
     if (!pLayerElement)
         return false;
 
     switch (pLayerElement->GetMappingMode())
     {
-    case KFbxLayerElement::eBY_CONTROL_POINT:
-    case KFbxLayerElement::eBY_POLYGON_VERTEX:
-    case KFbxLayerElement::eBY_POLYGON:
+    case FbxLayerElement::eByControlPoint:
+    case FbxLayerElement::eByPolygonVertex:
+    case FbxLayerElement::eByPolygon:
         break;
     default:
         return false;
@@ -59,8 +59,8 @@ bool layerElementValid(const KFbxLayerElementTemplate<T>* pLayerElement)
 
     switch (pLayerElement->GetReferenceMode())
     {
-    case KFbxLayerElement::eDIRECT:
-    case KFbxLayerElement::eINDEX_TO_DIRECT:
+    case FbxLayerElement::eDirect:
+    case FbxLayerElement::eIndexToDirect:
         return true;
     default:
         break;
@@ -70,28 +70,28 @@ bool layerElementValid(const KFbxLayerElementTemplate<T>* pLayerElement)
 }
 
 template <typename T>
-int getVertexIndex(const KFbxLayerElementTemplate<T>* pLayerElement,
-    const KFbxMesh* fbxMesh,
+int getVertexIndex(const FbxLayerElementTemplate<T>* pLayerElement,
+    const FbxMesh* fbxMesh,
     int nPolygon, int nPolyVertex, int nMeshVertex)
 {
     int index = 0;
 
     switch (pLayerElement->GetMappingMode())
     {
-    case KFbxLayerElement::eBY_CONTROL_POINT:
+    case FbxLayerElement::eByControlPoint:
         index = fbxMesh->GetPolygonVertex(nPolygon, nPolyVertex);
         break;
-    case KFbxLayerElement::eBY_POLYGON_VERTEX:
+    case FbxLayerElement::eByPolygonVertex:
         index = nMeshVertex;
         break;
-    case KFbxLayerElement::eBY_POLYGON:
+    case FbxLayerElement::eByPolygon:
         index = nPolygon;
         break;
     default:
         OSG_WARN << "getVertexIndex: unsupported FBX mapping mode" << std::endl;
     }
 
-    if (pLayerElement->GetReferenceMode() == KFbxLayerElement::eDIRECT)
+    if (pLayerElement->GetReferenceMode() == FbxLayerElement::eDirect)
     {
         return index;
     }
@@ -100,16 +100,16 @@ int getVertexIndex(const KFbxLayerElementTemplate<T>* pLayerElement,
 }
 
 template <typename T>
-int getPolygonIndex(const KFbxLayerElementTemplate<T>* pLayerElement, int nPolygon)
+int getPolygonIndex(const FbxLayerElementTemplate<T>* pLayerElement, int nPolygon)
 {
     if (pLayerElement &&
-        pLayerElement->GetMappingMode() == KFbxLayerElement::eBY_POLYGON)
+        pLayerElement->GetMappingMode() == FbxLayerElement::eByPolygon)
     {
         switch (pLayerElement->GetReferenceMode())
         {
-        case KFbxLayerElement::eDIRECT:
+        case FbxLayerElement::eDirect:
             return nPolygon;
-        case KFbxLayerElement::eINDEX_TO_DIRECT:
+        case FbxLayerElement::eIndexToDirect:
             return pLayerElement->GetIndexArray().GetAt(nPolygon);
         default:
             break;
@@ -120,8 +120,8 @@ int getPolygonIndex(const KFbxLayerElementTemplate<T>* pLayerElement, int nPolyg
 }
 
 template <typename FbxT>
-FbxT getElement(const KFbxLayerElementTemplate<FbxT>* pLayerElement,
-    const KFbxMesh* fbxMesh,
+FbxT getElement(const FbxLayerElementTemplate<FbxT>* pLayerElement,
+    const FbxMesh* fbxMesh,
     int nPolygon, int nPolyVertex, int nMeshVertex)
 {
     return pLayerElement->GetDirectArray().GetAt(getVertexIndex(
@@ -154,6 +154,7 @@ osg::Geometry* getGeometry(osg::Geode* pGeode, GeometryMap& geometryMap,
     bool useDiffuseMap,
     bool useOpacityMap,
     bool useEmissiveMap,
+    bool useAmbientMap,
     // more here...
     bool bColor,
     const osgDB::Options& options,
@@ -178,19 +179,21 @@ osg::Geometry* getGeometry(osg::Geode* pGeode, GeometryMap& geometryMap,
 
     osgDB::Options::PrecisionHint precision = options.getPrecisionHint();
 
-    pGeometry->setVertexData(osg::Geometry::ArrayData(createVec3Array((precision & osgDB::Options::DOUBLE_PRECISION_VERTEX) != 0), osg::Geometry::BIND_PER_VERTEX));
-    if (bNormal) pGeometry->setNormalData(osg::Geometry::ArrayData(createVec3Array((precision & osgDB::Options::DOUBLE_PRECISION_NORMAL) != 0), osg::Geometry::BIND_PER_VERTEX));
+    pGeometry->setVertexArray(createVec3Array((precision & osgDB::Options::DOUBLE_PRECISION_VERTEX) != 0));
+    if (bNormal) pGeometry->setNormalArray(createVec3Array((precision & osgDB::Options::DOUBLE_PRECISION_NORMAL) != 0), osg::Array::BIND_PER_VERTEX);
 
     // create as much textures coordinates as needed...
     if (useDiffuseMap)
-        pGeometry->setTexCoordData(StateSetContent::DIFFUSE_TEXTURE_UNIT, osg::Geometry::ArrayData(createVec2Array((precision & osgDB::Options::DOUBLE_PRECISION_TEX_COORD) != 0), osg::Geometry::BIND_PER_VERTEX));
+        pGeometry->setTexCoordArray(StateSetContent::DIFFUSE_TEXTURE_UNIT, createVec2Array((precision & osgDB::Options::DOUBLE_PRECISION_TEX_COORD) != 0), osg::Array::BIND_PER_VERTEX);
     if (useOpacityMap)
-        pGeometry->setTexCoordData(StateSetContent::OPACITY_TEXTURE_UNIT, osg::Geometry::ArrayData(createVec2Array((precision & osgDB::Options::DOUBLE_PRECISION_TEX_COORD) != 0), osg::Geometry::BIND_PER_VERTEX));
+        pGeometry->setTexCoordArray(StateSetContent::OPACITY_TEXTURE_UNIT, createVec2Array((precision & osgDB::Options::DOUBLE_PRECISION_TEX_COORD) != 0), osg::Array::BIND_PER_VERTEX);
     if (useEmissiveMap)
-        pGeometry->setTexCoordData(StateSetContent::EMISSIVE_TEXTURE_UNIT, osg::Geometry::ArrayData(createVec2Array((precision & osgDB::Options::DOUBLE_PRECISION_TEX_COORD) != 0), osg::Geometry::BIND_PER_VERTEX));
+        pGeometry->setTexCoordArray(StateSetContent::EMISSIVE_TEXTURE_UNIT, createVec2Array((precision & osgDB::Options::DOUBLE_PRECISION_TEX_COORD) != 0), osg::Array::BIND_PER_VERTEX);
+    if (useAmbientMap)
+        pGeometry->setTexCoordArray(StateSetContent::AMBIENT_TEXTURE_UNIT, createVec2Array((precision & osgDB::Options::DOUBLE_PRECISION_TEX_COORD) != 0), osg::Array::BIND_PER_VERTEX);
     // create more textures coordinates here...
 
-    if (bColor) pGeometry->setColorData(osg::Geometry::ArrayData(createVec4Array((precision & osgDB::Options::DOUBLE_PRECISION_COLOR) != 0), osg::Geometry::BIND_PER_VERTEX));
+    if (bColor) pGeometry->setColorArray(createVec4Array((precision & osgDB::Options::DOUBLE_PRECISION_COLOR) != 0), osg::Array::BIND_PER_VERTEX);
 
     if (mti < stateSetList.size())
     {
@@ -301,6 +304,22 @@ osg::Geometry* getGeometry(osg::Geode* pGeode, GeometryMap& geometryMap,
             stateSet->setTextureAttributeAndModes(StateSetContent::EMISSIVE_TEXTURE_UNIT, ssc.emissiveTexture.get());
         }
 
+        // ambient texture map
+        if (ssc.ambientTexture)
+        {
+            if (ssc.ambientScaleU != 1.0 || ssc.ambientScaleV != 1.0)
+            {
+                // set UV scaling...
+                osg::ref_ptr<osg::TexMat> texmat = new osg::TexMat();
+                osg::Matrix uvScaling;
+                uvScaling.makeScale(osg::Vec3(ssc.ambientScaleU, ssc.ambientScaleV, 1.0));
+                texmat->setMatrix(uvScaling);
+                stateSet->setTextureAttributeAndModes(StateSetContent::AMBIENT_TEXTURE_UNIT, texmat.get(), osg::StateAttribute::ON);
+            }
+
+            stateSet->setTextureAttributeAndModes(StateSetContent::AMBIENT_TEXTURE_UNIT, ssc.ambientTexture.get());
+        }
+
         // add more texture maps here...
 
         if (transparent)
@@ -361,15 +380,15 @@ void addChannel(
     pAnimation->addChannel(pChannel);
 }
 
-void readAnimation(KFbxNode* pNode, KFbxScene& fbxScene, const std::string& targetName,
+void readAnimation(FbxNode* pNode, FbxScene& fbxScene, const std::string& targetName,
     osg::ref_ptr<osgAnimation::AnimationManagerBase>& pAnimationManager,
-    KFbxMesh* pMesh, int nBlendShape, int nBlendShapeChannel, int nShape)
+    FbxMesh* pMesh, int nBlendShape, int nBlendShapeChannel, int nShape)
 {
-    for (int i = 0; i < fbxScene.GetSrcObjectCount(FBX_TYPE(KFbxAnimStack)); ++i)
+    for (int i = 0; i < fbxScene.GetSrcObjectCount<FbxAnimStack>(); ++i)
     {
-        KFbxAnimStack* pAnimStack = KFbxCast<KFbxAnimStack>(fbxScene.GetSrcObject(FBX_TYPE(KFbxAnimStack), i));
+        FbxAnimStack* pAnimStack = FbxCast<FbxAnimStack>(fbxScene.GetSrcObject<FbxAnimStack>(i));
 
-        int nbAnimLayers = pAnimStack->GetMemberCount(FBX_TYPE(KFbxAnimLayer));
+        int nbAnimLayers = pAnimStack->GetMemberCount<FbxAnimLayer>();
 
         const char* pTakeName = pAnimStack->GetName();
 
@@ -378,9 +397,9 @@ void readAnimation(KFbxNode* pNode, KFbxScene& fbxScene, const std::string& targ
 
         for (int j = 0; j < nbAnimLayers; j++)
         {
-            KFbxAnimLayer* pAnimLayer = pAnimStack->GetMember(FBX_TYPE(KFbxAnimLayer), j);
+            FbxAnimLayer* pAnimLayer = pAnimStack->GetMember<FbxAnimLayer>(j);
 
-            KFbxAnimCurve* pCurve = pMesh->GetShapeChannel(nBlendShape, nBlendShapeChannel, pAnimLayer, false);
+            FbxAnimCurve* pCurve = pMesh->GetShapeChannel(nBlendShape, nBlendShapeChannel, pAnimLayer, false);
 
             if (!pCurve)
             {
@@ -398,7 +417,7 @@ void readAnimation(KFbxNode* pNode, KFbxScene& fbxScene, const std::string& targ
 
             for (int k = 0; k < nKeys; ++k)
             {
-                KFbxAnimCurveKey key = pCurve->KeyGet(k);
+                FbxAnimCurveKey key = pCurve->KeyGet(k);
                 double fTime = key.GetTime().GetSecondDouble();
                 float fValue = static_cast<float>(key.GetValue() * 0.01);
                 keyFrameCntr.push_back(osgAnimation::FloatKeyframe(fTime,fValue));
@@ -415,7 +434,7 @@ void readAnimation(KFbxNode* pNode, KFbxScene& fbxScene, const std::string& targ
 
 void addBindMatrix(
     BindMatrixMap& boneBindMatrices,
-    KFbxNode* pBone,
+    FbxNode* pBone,
     const osg::Matrix& bindMatrix,
     osgAnimation::RigGeometry* pRigGeometry)
 {
@@ -423,7 +442,7 @@ void addBindMatrix(
         BindMatrixMap::key_type(pBone, pRigGeometry), bindMatrix));
 }
 
-void addVec2ArrayElement(osg::Array& a, const KFbxVector2& v)
+void addVec2ArrayElement(osg::Array& a, const FbxVector2& v)
 {
     if (a.getType() == osg::Array::Vec2dArrayType)
     {
@@ -437,7 +456,7 @@ void addVec2ArrayElement(osg::Array& a, const KFbxVector2& v)
     }
 }
 
-void addVec3ArrayElement(osg::Array& a, const KFbxVector4& v)
+void addVec3ArrayElement(osg::Array& a, const FbxVector4& v)
 {
     if (a.getType() == osg::Array::Vec3dArrayType)
     {
@@ -452,7 +471,7 @@ void addVec3ArrayElement(osg::Array& a, const KFbxVector4& v)
     }
 }
 
-void addColorArrayElement(osg::Array& a, const KFbxColor& c)
+void addColorArrayElement(osg::Array& a, const FbxColor& c)
 {
     if (a.getType() == osg::Array::Vec4dArrayType)
     {
@@ -475,14 +494,16 @@ std::string getUVChannelForTextureMap(std::vector<StateSetContent>& stateSetList
     // TODO: what if more than one channel for the same map type?
     for (unsigned int i = 0; i < stateSetList.size(); i++)
     {
-        if (0 == strcmp(pName, KFbxSurfaceMaterial::sDiffuse))
+        if (0 == strcmp(pName, FbxSurfaceMaterial::sDiffuse))
             return stateSetList[i].diffuseChannel;
-        if (0 == strcmp(pName, KFbxSurfaceMaterial::sTransparentColor))
+        if (0 == strcmp(pName, FbxSurfaceMaterial::sTransparentColor))
             return stateSetList[i].opacityChannel;
-        if (0 == strcmp(pName, KFbxSurfaceMaterial::sReflection))
+        if (0 == strcmp(pName, FbxSurfaceMaterial::sReflection))
             return stateSetList[i].reflectionChannel;
-        if (0 == strcmp(pName, KFbxSurfaceMaterial::sEmissive))
+        if (0 == strcmp(pName, FbxSurfaceMaterial::sEmissive))
             return stateSetList[i].emissiveChannel;
+        if (0 == strcmp(pName, FbxSurfaceMaterial::sAmbient))
+            return stateSetList[i].ambientChannel;
         // more here...
     }
 
@@ -490,17 +511,17 @@ std::string getUVChannelForTextureMap(std::vector<StateSetContent>& stateSetList
 }
 
 // scans mesh layers looking for the UV element corresponding to the specified channel name...
-const KFbxLayerElementUV* getUVElementForChannel(std::string uvChannelName,
-    KFbxLayerElement::ELayerElementType elementType, KFbxMesh* pFbxMesh)
+const FbxLayerElementUV* getUVElementForChannel(std::string uvChannelName,
+    FbxLayerElement::EType elementType, FbxMesh* pFbxMesh)
 {
     // scan layers for specified UV channel...
     for (int cLayerIndex = 0; cLayerIndex < pFbxMesh->GetLayerCount(); cLayerIndex++)
     {
-        const KFbxLayer* pFbxLayer = pFbxMesh->GetLayer(cLayerIndex);
+        const FbxLayer* pFbxLayer = pFbxMesh->GetLayer(cLayerIndex);
         if (!pFbxLayer)
             continue;
 
-        if (const KFbxLayerElementUV* uv = pFbxLayer->GetUVs())
+        if (const FbxLayerElementUV* uv = pFbxLayer->GetUVs())
         {
             if (0 == uvChannelName.compare(uv->GetName()))
                 return uv;
@@ -509,11 +530,11 @@ const KFbxLayerElementUV* getUVElementForChannel(std::string uvChannelName,
 
     for (int cLayerIndex = 0; cLayerIndex < pFbxMesh->GetLayerCount(); cLayerIndex++)
     {
-        const KFbxLayer* pFbxLayer = pFbxMesh->GetLayer(cLayerIndex);
+        const FbxLayer* pFbxLayer = pFbxMesh->GetLayer(cLayerIndex);
         if (!pFbxLayer)
             continue;
 
-        if (const KFbxLayerElementUV* uv = pFbxLayer->GetUVs(elementType))
+        if (const FbxLayerElementUV* uv = pFbxLayer->GetUVs(elementType))
         {
             return uv;
         }
@@ -526,23 +547,25 @@ typedef std::pair<osg::Geometry*, int> GIPair;
 typedef std::multimap<int, GIPair> FbxToOsgVertexMap;
 typedef std::map<GIPair, int> OsgToFbxNormalMap;
 
-void readMeshTriangle(const KFbxMesh * fbxMesh, int i /*polygonIndex*/,
+void readMeshTriangle(const FbxMesh * fbxMesh, int i /*polygonIndex*/,
                       int posInPoly0, int posInPoly1, int posInPoly2,
                       int meshVertex0, int meshVertex1, int meshVertex2,
                       FbxToOsgVertexMap& fbxToOsgVertMap,
                       OsgToFbxNormalMap& osgToFbxNormMap,
-                      const KFbxVector4* pFbxVertices,
-                      const KFbxLayerElementNormal* pFbxNormals,
-                      const KFbxLayerElementUV* pFbxUVs_diffuse,
-                      const KFbxLayerElementUV* pFbxUVs_opacity,
-                      const KFbxLayerElementUV* pFbxUVs_emissive,
-                      const KFbxLayerElementVertexColor* pFbxColors,
+                      const FbxVector4* pFbxVertices,
+                      const FbxLayerElementNormal* pFbxNormals,
+                      const FbxLayerElementUV* pFbxUVs_diffuse,
+                      const FbxLayerElementUV* pFbxUVs_opacity,
+                      const FbxLayerElementUV* pFbxUVs_emissive,
+                      const FbxLayerElementUV* pFbxUVs_ambient,
+                      const FbxLayerElementVertexColor* pFbxColors,
                       osg::Geometry* pGeometry,
                       osg::Array* pVertices,
                       osg::Array* pNormals,
                       osg::Array* pTexCoords_diffuse,
                       osg::Array* pTexCoords_opacity,
                       osg::Array* pTexCoords_emissive,
+                      osg::Array* pTexCoords_ambient,
                       osg::Array* pColors)
 {
     int v0 = fbxMesh->GetPolygonVertex(i, posInPoly0),
@@ -594,6 +617,12 @@ void readMeshTriangle(const KFbxMesh * fbxMesh, int i /*polygonIndex*/,
         addVec2ArrayElement(*pTexCoords_emissive, getElement(pFbxUVs_emissive, fbxMesh, i, posInPoly1, meshVertex1));
         addVec2ArrayElement(*pTexCoords_emissive, getElement(pFbxUVs_emissive, fbxMesh, i, posInPoly2, meshVertex2));
     }
+    if (pTexCoords_ambient && (pTexCoords_ambient != pTexCoords_opacity) && (pTexCoords_ambient != pTexCoords_diffuse) && (pTexCoords_ambient != pTexCoords_emissive))
+    {
+        addVec2ArrayElement(*pTexCoords_ambient, getElement(pFbxUVs_ambient, fbxMesh, i, posInPoly0, meshVertex0));
+        addVec2ArrayElement(*pTexCoords_ambient, getElement(pFbxUVs_ambient, fbxMesh, i, posInPoly1, meshVertex1));
+        addVec2ArrayElement(*pTexCoords_ambient, getElement(pFbxUVs_ambient, fbxMesh, i, posInPoly2, meshVertex2));
+    }
     // add more texture maps here...
 
     if (pColors)
@@ -605,9 +634,9 @@ void readMeshTriangle(const KFbxMesh * fbxMesh, int i /*polygonIndex*/,
 }
 
 /// Says if a quad should be split using vertices 02 (or else 13)
-bool quadSplit02(const KFbxMesh * fbxMesh, int i /*polygonIndex*/,
+bool quadSplit02(const FbxMesh * fbxMesh, int i /*polygonIndex*/,
                  int posInPoly0, int posInPoly1, int posInPoly2, int posInPoly3,
-                 const KFbxVector4* pFbxVertices)
+                 const FbxVector4* pFbxVertices)
 {
     // Algorithm may be a bit dumb. If you got a faster one, feel free to change.
     // Here we test each of the 4 triangles and see if there is one in the opposite direction.
@@ -659,8 +688,8 @@ struct PolygonRef
 typedef std::vector<PolygonRef> PolygonRefList;
 
 osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
-    KFbxNode* pNode,
-    KFbxMesh* fbxMesh,
+    FbxNode* pNode,
+    FbxMesh* fbxMesh,
     std::vector<StateSetContent>& stateSetList,
     const char* szName)
 {
@@ -669,16 +698,16 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
     osg::Geode* pGeode = new osg::Geode;
     pGeode->setName(szName);
 
-    const KFbxLayerElementNormal* pFbxNormals = 0;
-    const KFbxLayerElementVertexColor* pFbxColors = 0;
-    const KFbxLayerElementMaterial* pFbxMaterials = 0;
+    const FbxLayerElementNormal* pFbxNormals = 0;
+    const FbxLayerElementVertexColor* pFbxColors = 0;
+    const FbxLayerElementMaterial* pFbxMaterials = 0;
 
-    const KFbxVector4* pFbxVertices = fbxMesh->GetControlPoints();
+    const FbxVector4* pFbxVertices = fbxMesh->GetControlPoints();
 
     // scan layers for Normals, Colors and Materials elements (this will get the first available elements)...
     for (int cLayerIndex = 0; cLayerIndex < fbxMesh->GetLayerCount(); cLayerIndex++)
     {
-        const KFbxLayer* pFbxLayer = fbxMesh->GetLayer(cLayerIndex);
+        const FbxLayer* pFbxLayer = fbxMesh->GetLayer(cLayerIndex);
         if (!pFbxLayer)
             continue;
 
@@ -692,15 +721,17 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
     }
 
     // look for UV elements (diffuse, opacity, reflection, emissive, ...) and get their channels names...
-    std::string diffuseChannel = getUVChannelForTextureMap(stateSetList, KFbxSurfaceMaterial::sDiffuse);
-    std::string opacityChannel = getUVChannelForTextureMap(stateSetList, KFbxSurfaceMaterial::sTransparentColor);
-    std::string emissiveChannel = getUVChannelForTextureMap(stateSetList, KFbxSurfaceMaterial::sEmissive);
+    std::string diffuseChannel = getUVChannelForTextureMap(stateSetList, FbxSurfaceMaterial::sDiffuse);
+    std::string opacityChannel = getUVChannelForTextureMap(stateSetList, FbxSurfaceMaterial::sTransparentColor);
+    std::string emissiveChannel = getUVChannelForTextureMap(stateSetList, FbxSurfaceMaterial::sEmissive);
+    std::string ambientChannel = getUVChannelForTextureMap(stateSetList, FbxSurfaceMaterial::sAmbient);
     // look for more UV elements here...
 
     // UV elements...
-    const KFbxLayerElementUV* pFbxUVs_diffuse = getUVElementForChannel(diffuseChannel, KFbxLayerElement::eDIFFUSE_TEXTURES, fbxMesh);
-    const KFbxLayerElementUV* pFbxUVs_opacity = getUVElementForChannel(opacityChannel, KFbxLayerElement::eTRANSPARENT_TEXTURES, fbxMesh);
-    const KFbxLayerElementUV* pFbxUVs_emissive = getUVElementForChannel(emissiveChannel, KFbxLayerElement::eEMISSIVE_TEXTURES, fbxMesh);
+    const FbxLayerElementUV* pFbxUVs_diffuse = getUVElementForChannel(diffuseChannel, FbxLayerElement::eTextureDiffuse, fbxMesh);
+    const FbxLayerElementUV* pFbxUVs_opacity = getUVElementForChannel(opacityChannel, FbxLayerElement::eTextureTransparency, fbxMesh);
+    const FbxLayerElementUV* pFbxUVs_emissive = getUVElementForChannel(emissiveChannel, FbxLayerElement::eTextureEmissive, fbxMesh);
+    const FbxLayerElementUV* pFbxUVs_ambient = getUVElementForChannel(ambientChannel, FbxLayerElement::eTextureAmbient, fbxMesh);
     // more UV elements here...
 
     // check elements validity...
@@ -710,12 +741,13 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
     if (!layerElementValid(pFbxUVs_diffuse)) pFbxUVs_diffuse = 0;
     if (!layerElementValid(pFbxUVs_opacity)) pFbxUVs_opacity = 0;
     if (!layerElementValid(pFbxUVs_emissive)) pFbxUVs_emissive = 0;
+    if (!layerElementValid(pFbxUVs_ambient)) pFbxUVs_ambient = 0;
     // more here...
 
     int nPolys = fbxMesh->GetPolygonCount();
 
-    int nDeformerCount = fbxMesh->GetDeformerCount(KFbxDeformer::eSKIN);
-    int nDeformerBlendShapeCount = fbxMesh->GetDeformerCount(KFbxDeformer::eBLENDSHAPE);
+    int nDeformerCount = fbxMesh->GetDeformerCount(FbxDeformer::eSkin);
+    int nDeformerBlendShapeCount = fbxMesh->GetDeformerCount(FbxDeformer::eBlendShape);
 
     GeometryType geomType = GEOMETRY_STATIC;
 
@@ -750,6 +782,7 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
             pFbxUVs_diffuse != 0,
             pFbxUVs_opacity != 0,
             pFbxUVs_emissive != 0,
+            pFbxUVs_ambient != 0,
             // more UV elements here...
             pFbxColors != 0,
             options,
@@ -762,6 +795,7 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
         osg::Array* pTexCoords_diffuse = pGeometry->getTexCoordArray(StateSetContent::DIFFUSE_TEXTURE_UNIT);
         osg::Array* pTexCoords_opacity = pGeometry->getTexCoordArray(StateSetContent::OPACITY_TEXTURE_UNIT);
         osg::Array* pTexCoords_emissive = pGeometry->getTexCoordArray(StateSetContent::EMISSIVE_TEXTURE_UNIT);
+        osg::Array* pTexCoords_ambient = pGeometry->getTexCoordArray(StateSetContent::AMBIENT_TEXTURE_UNIT);
         // more texture coordinates here...
 
         osg::Array* pColors = pGeometry->getColorArray();
@@ -773,9 +807,9 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
                 0, 1, 2,
                 nVertex, nVertex+1, nVertex+2,
                 fbxToOsgVertMap, osgToFbxNormMap,
-                pFbxVertices, pFbxNormals, pFbxUVs_diffuse, pFbxUVs_opacity, pFbxUVs_emissive, pFbxColors,
+                pFbxVertices, pFbxNormals, pFbxUVs_diffuse, pFbxUVs_opacity, pFbxUVs_emissive, pFbxUVs_ambient, pFbxColors,
                 pGeometry,
-                pVertices, pNormals, pTexCoords_diffuse, pTexCoords_opacity, pTexCoords_emissive, pColors);
+                pVertices, pNormals, pTexCoords_diffuse, pTexCoords_opacity, pTexCoords_emissive, pTexCoords_ambient, pColors);
             nVertex += 3;
         }
         else if (lPolygonSize == 4)
@@ -790,16 +824,16 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
                 0, 1, p02,
                 nVertex, nVertex+1, nVertex+p02,
                 fbxToOsgVertMap, osgToFbxNormMap,
-                pFbxVertices, pFbxNormals, pFbxUVs_diffuse, pFbxUVs_opacity, pFbxUVs_emissive, pFbxColors,
+                pFbxVertices, pFbxNormals, pFbxUVs_diffuse, pFbxUVs_opacity, pFbxUVs_emissive, pFbxUVs_ambient, pFbxColors,
                 pGeometry,
-                pVertices, pNormals, pTexCoords_diffuse, pTexCoords_opacity, pTexCoords_emissive, pColors);
+                pVertices, pNormals, pTexCoords_diffuse, pTexCoords_opacity, pTexCoords_emissive, pTexCoords_ambient, pColors);
             readMeshTriangle(fbxMesh, i,
                 p10, 2, 3,
                 nVertex+p10, nVertex+2, nVertex+3,
                 fbxToOsgVertMap, osgToFbxNormMap,
-                pFbxVertices, pFbxNormals, pFbxUVs_diffuse, pFbxUVs_opacity, pFbxUVs_emissive, pFbxColors,
+                pFbxVertices, pFbxNormals, pFbxUVs_diffuse, pFbxUVs_opacity, pFbxUVs_emissive, pFbxUVs_ambient, pFbxColors,
                 pGeometry,
-                pVertices, pNormals, pTexCoords_diffuse, pTexCoords_opacity, pTexCoords_emissive, pColors);
+                pVertices, pNormals, pTexCoords_diffuse, pTexCoords_opacity, pTexCoords_emissive, pTexCoords_ambient, pColors);
             nVertex += 4;
         }
         else if (tessellatePolygons)
@@ -819,9 +853,9 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
                     0, j - 1, j,
                     nVertex0, nVertex - 1, nVertex,
                     fbxToOsgVertMap, osgToFbxNormMap,
-                    pFbxVertices, pFbxNormals, pFbxUVs_diffuse, pFbxUVs_opacity, pFbxUVs_emissive, pFbxColors,
+                    pFbxVertices, pFbxNormals, pFbxUVs_diffuse, pFbxUVs_opacity, pFbxUVs_emissive, pFbxUVs_ambient, pFbxColors,
                     pGeometry,
-                    pVertices, pNormals, pTexCoords_diffuse, pTexCoords_opacity, pTexCoords_emissive, pColors);
+                    pVertices, pNormals, pTexCoords_diffuse, pTexCoords_opacity, pTexCoords_emissive, pTexCoords_ambient, pColors);
             }
         }
     }
@@ -851,6 +885,7 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
         osg::Array* pTexCoords_diffuse = pGeometry->getTexCoordArray(StateSetContent::DIFFUSE_TEXTURE_UNIT);
         osg::Array* pTexCoords_opacity = pGeometry->getTexCoordArray(StateSetContent::OPACITY_TEXTURE_UNIT);
         osg::Array* pTexCoords_emissive = pGeometry->getTexCoordArray(StateSetContent::EMISSIVE_TEXTURE_UNIT);
+        osg::Array* pTexCoords_ambient = pGeometry->getTexCoordArray(StateSetContent::AMBIENT_TEXTURE_UNIT);
         osg::Array* pColors = pGeometry->getColorArray();
         // Index of the 1st vertex of the polygon in the geometry
         int osgVertex0 = pVertices->getNumElements();
@@ -882,6 +917,10 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
             if (pTexCoords_emissive && (pTexCoords_emissive != pTexCoords_opacity) && (pTexCoords_emissive != pTexCoords_diffuse))
             {
                 addVec2ArrayElement(*pTexCoords_emissive, getElement(pFbxUVs_emissive, fbxMesh, i, j, nVertex));
+            }
+            if (pTexCoords_ambient && (pTexCoords_ambient != pTexCoords_opacity) && (pTexCoords_ambient != pTexCoords_diffuse))
+            {
+                addVec2ArrayElement(*pTexCoords_ambient, getElement(pFbxUVs_ambient, fbxMesh, i, j, nVertex));
             }
             // add more texture maps here...
 
@@ -941,17 +980,17 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
 
         for (int i = 0; i < nDeformerCount; ++i)
         {
-            KFbxSkin* pSkin = (KFbxSkin*)fbxMesh->GetDeformer(i, KFbxDeformer::eSKIN);
+            FbxSkin* pSkin = (FbxSkin*)fbxMesh->GetDeformer(i, FbxDeformer::eSkin);
             int nClusters = pSkin->GetClusterCount();
             for (int j = 0; j < nClusters; ++j)
             {
-                KFbxCluster* pCluster = (KFbxCluster*)pSkin->GetCluster(j);
+                FbxCluster* pCluster = pSkin->GetCluster(j);
                 //assert(KFbxCluster::eNORMALIZE == pCluster->GetLinkMode());
-                KFbxNode* pBone = pCluster->GetLink();
+                FbxNode* pBone = pCluster->GetLink();
 
-                KFbxXMatrix transformLink;
+                FbxAMatrix transformLink;
                 pCluster->GetTransformLinkMatrix(transformLink);
-                KFbxXMatrix transformLinkInverse = transformLink.Inverse();
+                FbxAMatrix transformLinkInverse = transformLink.Inverse();
                 const double* pTransformLinkInverse = transformLinkInverse;
                 osg::Matrix bindMatrix(pTransformLinkInverse);
 
@@ -998,12 +1037,12 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
             //read morph geometry
             for (int nBlendShape = 0; nBlendShape < nDeformerBlendShapeCount; ++nBlendShape)
             {
-                KFbxBlendShape* pBlendShape = KFbxCast<KFbxBlendShape>(fbxMesh->GetDeformer(nBlendShape, KFbxDeformer::eBLENDSHAPE));
+                FbxBlendShape* pBlendShape = FbxCast<FbxBlendShape>(fbxMesh->GetDeformer(nBlendShape, FbxDeformer::eBlendShape));
                 const int nBlendShapeChannelCount = pBlendShape->GetBlendShapeChannelCount();
 
                 for (int nBlendShapeChannel = 0; nBlendShapeChannel < nBlendShapeChannelCount; ++nBlendShapeChannel)
                 {
-                    KFbxBlendShapeChannel* pBlendShapeChannel = pBlendShape->GetBlendShapeChannel(nBlendShapeChannel);
+                    FbxBlendShapeChannel* pBlendShapeChannel = pBlendShape->GetBlendShapeChannel(nBlendShapeChannel);
                     if (!pBlendShapeChannel->GetTargetShapeCount()) continue;
 
                     //Assume one shape
@@ -1011,10 +1050,10 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
                     {
                         OSG_WARN << "Multiple FBX Target Shapes, only the first will be used" << std::endl;
                     }
-                    const KFbxGeometryBase* pMorphShape = pBlendShapeChannel->GetTargetShape(0);
+                    const FbxGeometryBase* pMorphShape = pBlendShapeChannel->GetTargetShape(0);
 
-                    const KFbxLayerElementNormal* pFbxShapeNormals = 0;
-                    if (const KFbxLayer* pFbxShapeLayer = pMorphShape->GetLayer(0))
+                    const FbxLayerElementNormal* pFbxShapeNormals = 0;
+                    if (const FbxLayer* pFbxShapeLayer = pMorphShape->GetLayer(0))
                     {
                         pFbxShapeNormals = pFbxShapeLayer->GetNormals();
                         if (!layerElementValid(pFbxShapeNormals)) pFbxShapeNormals = 0;
@@ -1043,25 +1082,25 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
         int nMorphTarget = 0;
         for (int nBlendShape = 0; nBlendShape < nDeformerBlendShapeCount; ++nBlendShape)
         {
-            KFbxBlendShape* pBlendShape = KFbxCast<KFbxBlendShape>(fbxMesh->GetDeformer(nBlendShape, KFbxDeformer::eBLENDSHAPE));
+            FbxBlendShape* pBlendShape = FbxCast<FbxBlendShape>(fbxMesh->GetDeformer(nBlendShape, FbxDeformer::eBlendShape));
             const int nBlendShapeChannelCount = pBlendShape->GetBlendShapeChannelCount();
 
             for (int nBlendShapeChannel = 0; nBlendShapeChannel < nBlendShapeChannelCount; ++nBlendShapeChannel)
             {
-                KFbxBlendShapeChannel* pBlendShapeChannel = pBlendShape->GetBlendShapeChannel(nBlendShapeChannel);
+                FbxBlendShapeChannel* pBlendShapeChannel = pBlendShape->GetBlendShapeChannel(nBlendShapeChannel);
                 if (!pBlendShapeChannel->GetTargetShapeCount()) continue;
 
                 //Assume one shape again
-                const KFbxGeometryBase* pMorphShape = pBlendShapeChannel->GetTargetShape(0);
+                const FbxGeometryBase* pMorphShape = pBlendShapeChannel->GetTargetShape(0);
 
-                const KFbxLayerElementNormal* pFbxShapeNormals = 0;
-                if (const KFbxLayer* pFbxShapeLayer = pMorphShape->GetLayer(0))
+                const FbxLayerElementNormal* pFbxShapeNormals = 0;
+                if (const FbxLayer* pFbxShapeLayer = pMorphShape->GetLayer(0))
                 {
                     pFbxShapeNormals = pFbxShapeLayer->GetNormals();
                     if (!layerElementValid(pFbxShapeNormals)) pFbxShapeNormals = 0;
                 }
 
-                const KFbxVector4* pControlPoints = pMorphShape->GetControlPoints();
+                const FbxVector4* pControlPoints = pMorphShape->GetControlPoints();
                 int nControlPoints = pMorphShape->GetControlPointsCount();
                 for (int fbxIndex = 0; fbxIndex < nControlPoints; ++fbxIndex)
                 {
@@ -1111,7 +1150,7 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
         }
     }
 
-    KFbxXMatrix fbxGeometricTransform;
+    FbxAMatrix fbxGeometricTransform;
     fbxGeometricTransform.SetTRS(
         pNode->GeometricTranslation.Get(),
         pNode->GeometricRotation.Get(),
@@ -1121,10 +1160,10 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
 
     if (geomType == GEOMETRY_RIG)
     {
-        KFbxSkin* pSkin = (KFbxSkin*)fbxMesh->GetDeformer(0, KFbxDeformer::eSKIN);
+        FbxSkin* pSkin = (FbxSkin*)fbxMesh->GetDeformer(0, FbxDeformer::eSkin);
         if (pSkin->GetClusterCount())
         {
-            KFbxXMatrix fbxTransformMatrix;
+            FbxAMatrix fbxTransformMatrix;
             pSkin->GetCluster(0)->GetTransformMatrix(fbxTransformMatrix);
             const double* pTransformMatrix = fbxTransformMatrix;
             osgGeometricTransform.postMult(osg::Matrix(pTransformMatrix));
@@ -1143,7 +1182,7 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
     if (geomType == GEOMETRY_RIG)
     {
         //Add the geometry to the skeleton ancestor of one of the bones.
-        KFbxSkin* pSkin = (KFbxSkin*)fbxMesh->GetDeformer(0, KFbxDeformer::eSKIN);
+        FbxSkin* pSkin = (FbxSkin*)fbxMesh->GetDeformer(0, FbxDeformer::eSkin);
         if (pSkin->GetClusterCount())
         {
             osgAnimation::Skeleton* pSkeleton = getSkeleton(
@@ -1156,10 +1195,10 @@ osgDB::ReaderWriter::ReadResult OsgFbxReader::readMesh(
     return osgDB::ReaderWriter::ReadResult(pResult);
 }
 
-osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxMesh(KFbxNode* pNode,
+osgDB::ReaderWriter::ReadResult OsgFbxReader::readFbxMesh(FbxNode* pNode,
     std::vector<StateSetContent>& stateSetList)
 {
-    KFbxMesh* lMesh = KFbxCast<KFbxMesh>(pNode->GetNodeAttribute());
+    FbxMesh* lMesh = FbxCast<FbxMesh>(pNode->GetNodeAttribute());
 
     if (!lMesh)
     {

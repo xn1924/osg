@@ -799,8 +799,7 @@ public:
 
         osg::Vec4Array* colours = new osg::Vec4Array;
         colours->push_back(colour);
-        geometry->setColorArray(colours);
-        geometry->setColorBinding(osg::Geometry::BIND_OVERALL);
+        geometry->setColorArray(colours, osg::Array::BIND_OVERALL);
 
         osg::StateSet* stateset = geometry->getOrCreateStateSet();
         stateset->setMode(GL_LIGHTING, osg::StateAttribute::OFF);
@@ -1249,7 +1248,7 @@ void OverlayNode::traverse_OBJECT_DEPENDENT_WITH_ORTHOGRAPHIC_OVERLAY(osg::NodeV
             osg::BoundingSphere bs;
             for(unsigned int i=0; i<camera->getNumChildren(); ++i)
             {
-                bs.expandBy(camera->getChild(i)->getBound());
+                bs.expandBy(static_cast<const osg::BoundingSphere&>(camera->getChild(i)->getBound()));
             }
 
             if (bs.valid())

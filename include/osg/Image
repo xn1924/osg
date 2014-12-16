@@ -69,6 +69,7 @@
     #define GL_COLOR_INDEX          0x1900
     #define GL_INTENSITY12          0x804C
     #define GL_INTENSITY16          0x804D
+    #define GL_INTENSITY            0x8049
     #define GL_INTENSITY4           0x804A
     #define GL_INTENSITY8           0x804B
     #define GL_LUMINANCE12          0x8041
@@ -95,6 +96,37 @@
 
 #ifndef GL_OES_compressed_ETC1_RGB8_texture
     #define GL_ETC1_RGB8_OES        0x8D64
+#endif
+
+#ifndef GL_ARB_ES3_compatibility
+    #define GL_COMPRESSED_RGB8_ETC2                             0x9274
+    #define GL_COMPRESSED_SRGB8_ETC2                            0x9275
+    #define GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2         0x9276
+    #define GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2        0x9277
+    #define GL_COMPRESSED_RGBA8_ETC2_EAC                        0x9278
+    #define GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC                 0x9279
+    #define GL_COMPRESSED_R11_EAC                               0x9270
+    #define GL_COMPRESSED_SIGNED_R11_EAC                        0x9271
+    #define GL_COMPRESSED_RG11_EAC                              0x9272
+    #define GL_COMPRESSED_SIGNED_RG11_EAC                       0x9273
+#endif
+
+#ifndef GL_DEPTH_COMPONENT
+#define GL_DEPTH_COMPONENT              0x1902
+#endif
+
+#ifndef GL_VERSION_1_4
+#define GL_DEPTH_COMPONENT16              0x81A5
+#define GL_DEPTH_COMPONENT24              0x81A6
+#define GL_DEPTH_COMPONENT32              0x81A7
+#endif
+
+#ifndef GL_DEPTH_COMPONENT32F
+#define GL_DEPTH_COMPONENT32F             0x8CAC
+#endif
+
+#ifndef GL_DEPTH_COMPONENT32F_NV
+#define GL_DEPTH_COMPONENT32F_NV          0x8DAB
 #endif
 
 namespace osg {
@@ -179,6 +211,8 @@ class OSG_EXPORT Image : public BufferData
         */
         virtual void readImageFromCurrentTexture(unsigned int contextID, bool copyMipMapsIfAvailable, GLenum type = GL_UNSIGNED_BYTE, unsigned int face = 0);
 
+        /** swap the data and settings between two image objects.*/
+        void swap(osg::Image& rhs);
 
         /** Scale image to specified size. */
         void scaleImage(int s,int t,int r) { scaleImage(s,t,r, getDataType()); }
@@ -282,13 +316,13 @@ class OSG_EXPORT Image : public BufferData
           * take care to access the data per row rather than treating the whole data as a single block. */
         inline const unsigned char* data() const { return _data; }
 
-        inline unsigned char* data(int column, int row=0,int image=0)
+        inline unsigned char* data(unsigned int column, unsigned int row = 0, unsigned int image = 0)
         {
             if (!_data) return NULL;
             return _data+(column*getPixelSizeInBits())/8+row*getRowStepInBytes()+image*getImageSizeInBytes();
         }
 
-        inline const unsigned char* data(int column, int row=0,int image=0) const
+        inline const unsigned char* data(unsigned int column, unsigned int row = 0, unsigned int image = 0) const
         {
             if (!_data) return NULL;
             return _data+(column*getPixelSizeInBits())/8+row*getRowStepInBytes()+image*getImageSizeInBytes();
@@ -339,6 +373,14 @@ class OSG_EXPORT Image : public BufferData
         /** Get the color value for specified texcoord.*/
         Vec4 getColor(const Vec3& texcoord) const;
 
+         /** Set the color value for specified texcoord.*/
+        void setColor(const osg::Vec4& color, unsigned int s, unsigned int t=0, unsigned int r=0);
+
+         /** Set the color value for specified texcoord. Note texcoord is clamped to edge.*/
+        void setColor(const osg::Vec4& color, const osg::Vec2& texcoord ) { setColor(color, osg::Vec3(texcoord, 0.0f)); }
+
+         /** Set the color value for specified texcoord. Note texcoord is clamped to edge.*/
+        void setColor(const osg::Vec4& color, const osg::Vec3& texcoord );
 
         /** Flip the image horizontally, around s dimension. */
         void flipHorizontal();
@@ -363,7 +405,7 @@ class OSG_EXPORT Image : public BufferData
         static unsigned int computeNumComponents(GLenum pixelFormat);
         static unsigned int computePixelSizeInBits(GLenum pixelFormat,GLenum type);
         static unsigned int computeRowWidthInBytes(int width,GLenum pixelFormat,GLenum type,int packing);
-        static unsigned int computeImageSizeInBytes(int width,int height, int depth, GLenum pixelFormat,GLenum type,int packing);
+        static unsigned int computeImageSizeInBytes(int width,int height, int depth, GLenum pixelFormat, GLenum type, int packing = 1, int slice_packing = 1, int image_packing = 1);
         static int computeNearestPowerOfTwo(int s,float bias=0.5f);
         static int computeNumberOfMipmapLevels(int s,int t = 1, int r = 1);
 
@@ -411,10 +453,10 @@ class OSG_EXPORT Image : public BufferData
         void setPixelBufferObject(PixelBufferObject* buffer) { setBufferObject(buffer); }
 
         /** Get the PixelBufferObject.*/
-        PixelBufferObject* getPixelBufferObject() { return dynamic_cast<PixelBufferObject*>(_bufferObject.get()); }
+        PixelBufferObject* getPixelBufferObject() { return dynamic_cast<PixelBufferObject*>(getBufferObject()); }
 
         /** Get the const PixelBufferObject.*/
-        const PixelBufferObject* getPixelBufferObject() const { return dynamic_cast<const PixelBufferObject*>(_bufferObject.get()); }
+        const PixelBufferObject* getPixelBufferObject() const { return dynamic_cast<const PixelBufferObject*>(getBufferObject()); }
 
         /** Return whether the update(NodeVisitor* nv) should be required on each frame to enable proper working of osg::Image.*/
         virtual bool requiresUpdateCall() const { return false; }
@@ -442,15 +484,15 @@ class OSG_EXPORT Image : public BufferData
 
         /** Pass frame information to the custom Image classes, to be called only when objects associated with imagery are not culled.*/
         virtual void setFrameLastRendered(const osg::FrameStamp* /*frameStamp*/) {}
-        
+
         class DimensionsChangedCallback : public osg::Referenced {
         public:
             DimensionsChangedCallback() : osg::Referenced() {}
             virtual void operator()(osg::Image* image) = 0;
         };
-        
+
         typedef std::vector< osg::ref_ptr<DimensionsChangedCallback> > DimensionsChangedCallbackVector;
-        
+
         void addDimensionsChangedCallback(DimensionsChangedCallback* cb);
         void removeDimensionsChangedCallback(DimensionsChangedCallback* cb);
 
@@ -459,8 +501,8 @@ class OSG_EXPORT Image : public BufferData
         virtual ~Image();
 
         Image& operator = (const Image&) { return *this; }
-        
-        void handleDimensionsChangedCallbacks() 
+
+        void handleDimensionsChangedCallbacks()
         {
             for(DimensionsChangedCallbackVector::iterator i = _dimensionsChangedCallbacks.begin(); i != _dimensionsChangedCallbacks.end(); ++i)
             {
@@ -470,7 +512,6 @@ class OSG_EXPORT Image : public BufferData
 
         std::string _fileName;
         WriteHint   _writeHint;
-
 
         Origin _origin;
 
@@ -491,8 +532,6 @@ class OSG_EXPORT Image : public BufferData
 
         MipmapDataType _mipmapData;
 
-        ref_ptr<PixelBufferObject> _bufferObject;
-        
         DimensionsChangedCallbackVector _dimensionsChangedCallbacks;
 };
 

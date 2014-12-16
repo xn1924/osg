@@ -51,7 +51,7 @@ void BufferIndexBinding::apply(State& state) const
     {
         GLBufferObject* glObject
             = _bufferObject->getOrCreateGLBufferObject(state.getContextID());
-        if (!glObject->_extensions->isUniformBufferObjectSupported())
+        if (!glObject->_extensions->isUniformBufferObjectSupported)
             return;
         if (glObject->isDirty()) glObject->compileBuffer();
         glObject->_extensions->glBindBufferRange(_target, _index,
@@ -142,5 +142,27 @@ void AtomicCounterBufferBinding::readData(osg::State & state, osg::UIntArray & u
     if (static_cast<GLuint>(previousID) != bo->getGLObjectID())
         bo->_extensions->glBindBuffer(GL_ATOMIC_COUNTER_BUFFER, static_cast<GLuint>(previousID));
 }
+
+
+ShaderStorageBufferBinding::ShaderStorageBufferBinding(GLuint index)
+    : BufferIndexBinding(GL_SHADER_STORAGE_BUFFER, index)
+{
+}
+
+ShaderStorageBufferBinding::ShaderStorageBufferBinding(GLuint index, BufferObject* bo, GLintptr offset, GLsizeiptr size)
+    : BufferIndexBinding(GL_SHADER_STORAGE_BUFFER, index, bo, offset, size)
+{
+
+}
+
+ShaderStorageBufferBinding::ShaderStorageBufferBinding(const ShaderStorageBufferBinding& rhs, const CopyOp& copyop)
+    : BufferIndexBinding(rhs, copyop)
+{
+}
+
+
+
+
+
 
 } // namespace osg

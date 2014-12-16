@@ -264,7 +264,7 @@ void OperationQueue::removeOperationThread(OperationThread* thread)
 OperationThread::OperationThread():
     osg::Referenced(true),
     _parent(0),
-    _done(false)
+    _done(0)
 {
     setOperationQueue(new OperationQueue);
 }
@@ -293,9 +293,10 @@ void OperationThread::setOperationQueue(OperationQueue* opq)
 
 void OperationThread::setDone(bool done)
 {
-    if (_done==done) return;
+    unsigned d = done?0:1;
+    if (_done==d) return;
 
-    _done = true;
+    _done.exchange(d);
 
     if (done)
     {
@@ -322,7 +323,7 @@ int OperationThread::cancel()
     if( isRunning() )
     {
 
-        _done = true;
+        _done.exchange(1);
 
         OSG_INFO<<"   Doing cancel "<<this<<std::endl;
 
@@ -360,6 +361,10 @@ int OperationThread::cancel()
             OSG_DEBUG<<"   Waiting for OperationThread to cancel "<<this<<std::endl;
             OpenThreads::Thread::YieldCurrentThread();
         }
+
+        // use join to appease valgrind as the above loop won't exit till the thread stops running
+        // but valgrind doesn't reconginze this and assumes the thread is still running
+        join();
     }
 
     OSG_INFO<<"  OperationThread::cancel() thread cancelled "<<this<<" isRunning()="<<isRunning()<<std::endl;

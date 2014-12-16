@@ -134,7 +134,7 @@ class OSGDB_EXPORT DatabasePager : public osg::NodeVisitor::DatabaseRequestHandl
 
         const DatabaseThread* getDatabaseThread(unsigned int i) const { return _databaseThreads[i].get(); }
 
-        unsigned int getNumDatabaseThreads() const { return _databaseThreads.size(); }
+        unsigned int getNumDatabaseThreads() const { return static_cast<unsigned int>(_databaseThreads.size()); }
 
         /** Set whether the database pager thread should be paused or not.*/
         void setDatabasePagerThreadPause(bool pause);
@@ -245,13 +245,13 @@ class OSGDB_EXPORT DatabasePager : public osg::NodeVisitor::DatabaseRequestHandl
         virtual void updateSceneGraph(const osg::FrameStamp& frameStamp);
 
         /** Report how many items are in the _fileRequestList queue */
-        unsigned int getFileRequestListSize() const { return _fileRequestQueue->size() + _httpRequestQueue->size(); }
+        unsigned int getFileRequestListSize() const { return static_cast<unsigned int>(_fileRequestQueue->size() + _httpRequestQueue->size()); }
 
         /** Report how many items are in the _dataToCompileList queue */
-        unsigned int getDataToCompileListSize() const { return _dataToCompileList->size(); }
+        unsigned int getDataToCompileListSize() const { return static_cast<unsigned int>(_dataToCompileList->size()); }
 
         /** Report how many items are in the _dataToMergeList queue */
-        unsigned int getDataToMergeListSize() const { return _dataToMergeList->size(); }
+        unsigned int getDataToMergeListSize() const { return static_cast<unsigned int>(_dataToMergeList->size()); }
 
         /** Report whether any requests are in the pager.*/
         bool getRequestsInProgress() const;
@@ -286,6 +286,9 @@ class OSGDB_EXPORT DatabasePager : public osg::NodeVisitor::DatabaseRequestHandl
             virtual bool containsPagedLOD(const osg::observer_ptr<osg::PagedLOD>& plod) const = 0;
         };
 
+        void setMarkerObject(osg::Object* mo) { _markerObject = mo; }
+        osg::Object* getMarkerObject() { return _markerObject.get(); }
+        const osg::Object* getMarkerObject() const { return _markerObject.get(); }
 
     protected:
 
@@ -315,29 +318,30 @@ class OSGDB_EXPORT DatabasePager : public osg::NodeVisitor::DatabaseRequestHandl
 
             bool valid() const { return _valid; }
 
-            bool                        _valid;
-            std::string                 _fileName;
-            unsigned int                _frameNumberFirstRequest;
-            double                      _timestampFirstRequest;
-            float                       _priorityFirstRequest;
-            unsigned int                _frameNumberLastRequest;
-            double                      _timestampLastRequest;
-            float                       _priorityLastRequest;
-            unsigned int                _numOfRequests;
+            bool isRequestCurrent (int frameNumber) const
+            {
+                return _valid && (frameNumber - _frameNumberLastRequest <= 1);
+            }
+
+            bool                                _valid;
+            std::string                         _fileName;
+            unsigned int                        _frameNumberFirstRequest;
+            double                              _timestampFirstRequest;
+            float                               _priorityFirstRequest;
+            unsigned int                        _frameNumberLastRequest;
+            double                              _timestampLastRequest;
+            float                               _priorityLastRequest;
+            unsigned int                        _numOfRequests;
 
             osg::observer_ptr<osg::Node>        _terrain;
             osg::observer_ptr<osg::Group>       _group;
 
             osg::ref_ptr<osg::Node>             _loadedModel;
             osg::ref_ptr<Options>               _loadOptions;
+            osg::ref_ptr<ObjectCache>           _objectCache;
 
             osg::observer_ptr<osgUtil::IncrementalCompileOperation::CompileSet> _compileSet;
-            bool                        _groupExpired; // flag used only in update thread
-
-            bool isRequestCurrent (int frameNumber) const
-            {
-                return _valid && (frameNumber - _frameNumberLastRequest <= 1);
-            }
+            bool                                _groupExpired; // flag used only in update thread
         };
 
 
@@ -469,6 +473,8 @@ class OSGDB_EXPORT DatabasePager : public osg::NodeVisitor::DatabaseRequestHandl
         double                          _maximumTimeToMergeTile;
         double                          _totalTimeToMergeTiles;
         unsigned int                    _numTilesMerges;
+
+        osg::ref_ptr<osg::Object>       _markerObject;
 };
 
 }

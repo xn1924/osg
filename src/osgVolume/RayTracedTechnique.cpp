@@ -30,49 +30,6 @@
 namespace osgVolume
 {
 
-class TransformLocatorCallback : public Locator::LocatorCallback
-{
-    public:
-
-        TransformLocatorCallback(osg::MatrixTransform* transform): _transform(transform) {}
-
-        void locatorModified(Locator* locator)
-        {
-            if (_transform.valid()) _transform->setMatrix(locator->getTransform());
-        }
-
-    protected:
-
-        osg::observer_ptr<osg::MatrixTransform> _transform;
-};
-
-
-class TexGenLocatorCallback : public Locator::LocatorCallback
-{
-    public:
-
-        TexGenLocatorCallback(osg::TexGen* texgen, Locator* geometryLocator, Locator* imageLocator):
-            _texgen(texgen),
-            _geometryLocator(geometryLocator),
-            _imageLocator(imageLocator) {}
-
-        void locatorModified(Locator*)
-        {
-            if (!_texgen || !_geometryLocator || !_imageLocator) return;
-
-            _texgen->setPlanesFromMatrix(
-                _geometryLocator->getTransform() *
-                osg::Matrix::inverse(_imageLocator->getTransform()));
-        }
-
-    protected:
-
-        osg::observer_ptr<osg::TexGen> _texgen;
-        osg::observer_ptr<osgVolume::Locator> _geometryLocator;
-        osg::observer_ptr<osgVolume::Locator> _imageLocator;
-};
-
-
 RayTracedTechnique::RayTracedTechnique()
 {
 }
@@ -205,10 +162,10 @@ void RayTracedTechnique::init()
 
         // get shaders from source
 
-        osg::Shader* vertexShader = osgDB::readShaderFile(osg::Shader::VERTEX, "shaders/volume.vert");
-        if (vertexShader)
+        osg::ref_ptr<osg::Shader> vertexShader = osgDB::readRefShaderFile(osg::Shader::VERTEX, "shaders/volume.vert");
+        if (vertexShader.valid())
         {
-            program->addShader(vertexShader);
+            program->addShader(vertexShader.get());
         }
         else
         {
@@ -287,10 +244,10 @@ void RayTracedTechnique::init()
 
             if (tf)
             {
-                osg::Shader* fragmentShader = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/volume_tf_mip.frag");
-                if (fragmentShader)
+                osg::ref_ptr<osg::Shader> fragmentShader = osgDB::readRefShaderFile(osg::Shader::FRAGMENT, "shaders/volume_tf_mip.frag");
+                if (fragmentShader.valid())
                 {
-                    program->addShader(fragmentShader);
+                    program->addShader(fragmentShader.get());
                 }
                 else
                 {
@@ -304,10 +261,10 @@ void RayTracedTechnique::init()
             }
             else
             {
-                osg::Shader* fragmentShader = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/volume_mip.frag");
-                if (fragmentShader)
+                osg::ref_ptr<osg::Shader> fragmentShader = osgDB::readRefShaderFile(osg::Shader::FRAGMENT, "shaders/volume_mip.frag");
+                if (fragmentShader.valid())
                 {
-                    program->addShader(fragmentShader);
+                    program->addShader(fragmentShader.get());
                 }
                 else
                 {
@@ -325,10 +282,10 @@ void RayTracedTechnique::init()
 
             if (tf)
             {
-                osg::Shader* fragmentShader = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/volume_tf_iso.frag");
-                if (fragmentShader)
+                osg::ref_ptr<osg::Shader> fragmentShader = osgDB::readRefShaderFile(osg::Shader::FRAGMENT, "shaders/volume_tf_iso.frag");
+                if (fragmentShader.valid())
                 {
-                    program->addShader(fragmentShader);
+                    program->addShader(fragmentShader.get());
                 }
                 else
                 {
@@ -338,12 +295,12 @@ void RayTracedTechnique::init()
             }
             else
             {
-                osg::Shader* fragmentShader = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/volume_iso.frag");
-                if (fragmentShader)
+                osg::ref_ptr<osg::Shader> fragmentShader = osgDB::readRefShaderFile(osg::Shader::FRAGMENT, "shaders/volume_iso.frag");
+                if (fragmentShader.valid())
                 {
                     OSG_INFO<<"Shader found"<<std::endl;
 
-                    program->addShader(fragmentShader);
+                    program->addShader(fragmentShader.get());
                 }
                 else
                 {
@@ -360,10 +317,10 @@ void RayTracedTechnique::init()
 
             if (tf)
             {
-                osg::Shader* fragmentShader = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/volume_lit_tf.frag");
-                if (fragmentShader)
+                osg::ref_ptr<osg::Shader> fragmentShader = osgDB::readRefShaderFile(osg::Shader::FRAGMENT, "shaders/volume_lit_tf.frag");
+                if (fragmentShader.valid())
                 {
-                    program->addShader(fragmentShader);
+                    program->addShader(fragmentShader.get());
                 }
                 else
                 {
@@ -374,10 +331,10 @@ void RayTracedTechnique::init()
             }
             else
             {
-                osg::Shader* fragmentShader = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/volume_lit.frag");
-                if (fragmentShader)
+                osg::ref_ptr<osg::Shader> fragmentShader = osgDB::readRefShaderFile(osg::Shader::FRAGMENT, "shaders/volume_lit.frag");
+                if (fragmentShader.valid())
                 {
-                    program->addShader(fragmentShader);
+                    program->addShader(fragmentShader.get());
                 }
                 else
                 {
@@ -392,10 +349,10 @@ void RayTracedTechnique::init()
 
             if (tf)
             {
-                osg::Shader* fragmentShader = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/volume_tf.frag");
-                if (fragmentShader)
+                osg::ref_ptr<osg::Shader> fragmentShader = osgDB::readRefShaderFile(osg::Shader::FRAGMENT, "shaders/volume_tf.frag");
+                if (fragmentShader.valid())
                 {
-                    program->addShader(fragmentShader);
+                    program->addShader(fragmentShader.get());
                 }
                 else
                 {
@@ -406,10 +363,10 @@ void RayTracedTechnique::init()
             }
             else
             {
-                osg::Shader* fragmentShader = osgDB::readShaderFile(osg::Shader::FRAGMENT, "shaders/volume.frag");
-                if (fragmentShader)
+                osg::ref_ptr<osg::Shader> fragmentShader = osgDB::readRefShaderFile(osg::Shader::FRAGMENT, "shaders/volume.frag");
+                if (fragmentShader.valid())
                 {
-                    program->addShader(fragmentShader);
+                    program->addShader(fragmentShader.get());
                 }
                 else
                 {
@@ -480,8 +437,7 @@ void RayTracedTechnique::init()
 
         osg::Vec4Array* colours = new osg::Vec4Array(1);
         (*colours)[0].set(1.0f,1.0f,1.0,1.0f);
-        geom->setColorArray(colours);
-        geom->setColorBinding(osg::Geometry::BIND_OVERALL);
+        geom->setColorArray(colours, osg::Array::BIND_OVERALL);
 
         osg::DrawElementsUShort* drawElements = new osg::DrawElementsUShort(GL_QUADS);
         // bottom
@@ -533,7 +489,7 @@ void RayTracedTechnique::init()
     }
 }
 
-void RayTracedTechnique::update(osgUtil::UpdateVisitor* uv)
+void RayTracedTechnique::update(osgUtil::UpdateVisitor* /*uv*/)
 {
 //    OSG_NOTICE<<"RayTracedTechnique:update(osgUtil::UpdateVisitor* nv):"<<std::endl;
 }
@@ -542,36 +498,11 @@ void RayTracedTechnique::cull(osgUtil::CullVisitor* cv)
 {
     if (!_transform.valid()) return;
 
-    if (_whenMovingStateSet.valid())
+    if (_whenMovingStateSet.valid() && isMoving(cv))
     {
-        bool moving = false;
-        {
-            OpenThreads::ScopedLock<OpenThreads::Mutex> lock(_mutex);
-            ModelViewMatrixMap::iterator itr = _modelViewMatrixMap.find(cv->getIdentifier());
-            if (itr!=_modelViewMatrixMap.end())
-            {
-                osg::Matrix newModelViewMatrix = *(cv->getModelViewMatrix());
-                osg::Matrix& previousModelViewMatrix = itr->second;
-                moving = (newModelViewMatrix != previousModelViewMatrix);
-
-                previousModelViewMatrix = newModelViewMatrix;
-            }
-            else
-            {
-                _modelViewMatrixMap[cv->getIdentifier()] = *(cv->getModelViewMatrix());
-            }
-        }
-
-        if (moving)
-        {
-            cv->pushStateSet(_whenMovingStateSet.get());
-            _transform->accept(*cv);
-            cv->popStateSet();
-        }
-        else
-        {
-            _transform->accept(*cv);
-        }
+        cv->pushStateSet(_whenMovingStateSet.get());
+        _transform->accept(*cv);
+        cv->popStateSet();
     }
     else
     {
